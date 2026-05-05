@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>boolean — главная</title>
+
+    <!-- Шрифты: JetBrains Mono как основной моноширинный, Inter для общего текста -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+    <style>
+        /* ==================== СБРОС И ПЕРЕМЕННЫЕ ==================== */
+        :root {
+            --bg-primary: #0d0d0f;
+            --bg-secondary: #111115;
+            --bg-card: #16161b;
+            --text-primary: #e4e4e7;
+            --text-secondary: #8b8b90;
+            --text-muted: #5c5c63;
+            --border-color: #222228;
+            --accent: #6c6c7a;
+            --gradient-1: #a1a1aa;
+            --gradient-2: #52525b;
+            --gradient-3: #3f3f46;
+            --green: #4ade80;
+            --green-dim: #166534;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-secondary);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* ==================== СЕТКА ФОНА ==================== */
+        .bg-grid {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+            background-size: 64px 64px;
+            mask-image: radial-gradient(ellipse at center, black 20%, transparent 70%);
+            -webkit-mask-image: radial-gradient(ellipse at center, black 20%, transparent 70%);
+        }
+
+        /* ==================== ОСНОВНОЙ КОНТЕЙНЕР ==================== */
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 60px 24px 80px;
+            display: flex;
+            flex-direction: column;
+            gap: 48px;
+        }
+
+        /* ==================== ШАПКА ==================== */
+        .header {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 40px 0 0;
+        }
+
+        .header-top {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 8px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background-color: var(--green);
+            border-radius: 50%;
+            box-shadow: 0 0 12px var(--green), 0 0 24px var(--green-dim);
+            animation: statusPulse 3s ease-in-out infinite;
+        }
+
+        @keyframes statusPulse {
+            0%, 100% { box-shadow: 0 0 12px var(--green), 0 0 24px var(--green-dim); }
+            50% { box-shadow: 0 0 18px var(--green), 0 0 36px var(--green-dim); }
+        }
+
+        .status-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: clamp(2rem, 5vw, 3.2rem);
+            font-weight: 700;
+            line-height: 1.1;
+            letter-spacing: -1px;
+            background: linear-gradient(
+                135deg,
+                var(--gradient-1) 0%,
+                var(--gradient-2) 40%,
+                var(--gradient-3) 70%,
+                var(--gradient-1) 100%
+            );
+            background-size: 300% 300%;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: gradientText 8s ease infinite;
+        }
+
+        @keyframes gradientText {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .subtitle {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            letter-spacing: 0.3px;
+            margin-top: 4px;
+        }
+
+        .subtitle span {
+            color: var(--text-secondary);
+        }
+
+        /* ==================== СЕКЦИИ ==================== */
+        .section-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        /* Карточки */
+        .card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 28px 26px;
+            transition: all 0.25s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            border-color: #333340;
+            background-color: #19191f;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+            pointer-events: none;
+        }
+
+        .card-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+            letter-spacing: -0.3px;
+        }
+
+        .card-desc {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            line-height: 1.7;
+        }
+
+        .card-desc strong {
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        /* ==================== КОНТАКТЫ ==================== */
+        .contacts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        @media (max-width: 500px) {
+            .contacts-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .contact-item {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 18px 20px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            text-decoration: none;
+            transition: all 0.25s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .contact-item:hover {
+            border-color: #333340;
+            background-color: #19191f;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        .contact-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent);
+            pointer-events: none;
+        }
+
+        .contact-icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+            background-color: #1a1a24;
+            border: 1px solid #2a2a35;
+        }
+
+        .contact-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .contact-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+
+        .contact-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            color: var(--text-primary);
+            font-weight: 500;
+            letter-spacing: -0.2px;
+        }
+
+        .contact-value.dim {
+            color: var(--text-muted);
+            font-weight: 400;
+            font-style: italic;
+        }
+
+        /* ==================== ПРОЕКТЫ ==================== */
+        .project-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .project-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 18px;
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            transition: all 0.2s ease;
+        }
+
+        .project-item:hover {
+            border-color: #333340;
+            background-color: #19191f;
+        }
+
+        .project-name {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .project-tag {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.6rem;
+            color: var(--text-muted);
+            background-color: #1a1a24;
+            padding: 4px 10px;
+            border-radius: 6px;
+            letter-spacing: 0.3px;
+            border: 1px solid #22222c;
+        }
+
+        /* ==================== ПОДВАЛ ==================== */
+        .footer {
+            text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            opacity: 0.5;
+            letter-spacing: 0.3px;
+            padding-top: 20px;
+        }
+
+        .footer span {
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Сетка фона -->
+    <div class="bg-grid"></div>
+
+    <!-- Основной контейнер -->
+    <div class="container">
+
+        <!-- ==================== ШАПКА ==================== -->
+        <header class="header">
+            <div class="header-top">
+                <div class="status-dot"></div>
+                <span class="status-text">доступен для проектов</span>
+            </div>
+            <h1 class="title">boolean</h1>
+            <p class="subtitle">
+                <span>разработчик</span> / пентестер / химик-физик<br>
+                исследование уязвимостей и системная архитектура
+            </p>
+        </header>
+
+        <!-- ==================== О СЕБЕ ==================== -->
+        <section>
+            <div class="section-label">// обо мне</div>
+            <div class="card">
+                <div class="card-title">краткая сводка</div>
+                <div class="card-desc">
+                    Занимаюсь <strong>веб-разработкой</strong> и <strong>информационной безопасностью</strong> более 4 лет.
+                    Специализируюсь на пентесте веб-приложений, анализе защищённости API и реверс-инжиниринге.
+                    В свободное время изучаю <strong>квантовую химию</strong> и <strong>вычислительную физику</strong>.
+                    Работаю в изолированных лабораторных средах, строго в образовательных целях.
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== КОНТАКТЫ ==================== -->
+        <section>
+            <div class="section-label">// контакты</div>
+            <div class="contacts-grid">
+
+                <!-- Discord -->
+                <a href="https://discord.com/users/internetpanickid" target="_blank" class="contact-item" title="Добавить в Discord">
+                    <div class="contact-icon">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="#8b8b90">
+                            <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+                        </svg>
+                    </div>
+                    <div class="contact-info">
+                        <span class="contact-label">дискорд</span>
+                        <span class="contact-value">internetpanickid</span>
+                    </div>
+                </a>
+
+                <!-- GitHub -->
+                <a href="https://github.com/boolean1337" target="_blank" class="contact-item" title="Профиль на GitHub">
+                    <div class="contact-icon">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="#8b8b90">
+                            <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
+                        </svg>
+                    </div>
+                    <div class="contact-info">
+                        <span class="contact-label">github</span>
+                        <span class="contact-value">boolean1337</span>
+                    </div>
+                </a>
+
+                <!-- Email (нет) -->
+                <div class="contact-item" title="Почта не указана">
+                    <div class="contact-icon">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="#5c5c63">
+                            <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+                        </svg>
+                    </div>
+                    <div class="contact-info">
+                        <span class="contact-label">почта</span>
+                        <span class="contact-value dim">не указана</span>
+                    </div>
+                </div>
+
+                <!-- Telegram placeholder -->
+                <div class="contact-item" title="Телеграм">
+                    <div class="contact-icon">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="#8b8b90">
+                            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.161c-.18.717-.962 4.084-1.362 5.412-.168.56-.5.748-.822.766-.7.064-1.23-.462-1.91-.903-1.06-.695-1.66-1.128-2.69-1.806-1.19-.784-.42-1.214.26-1.918.178-.185 3.247-2.977 3.307-3.23.007-.032.015-.15-.056-.212s-.174-.04-.248-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.01-1.252-.24-1.865-.44-.752-.245-1.35-.374-1.297-.79.027-.216.325-.437.893-.662 3.498-1.524 5.83-2.529 6.998-3.015 3.332-1.386 4.025-1.627 4.476-1.635.1-.002.32.023.462.14.119.098.152.228.168.33.016.102.036.333.02.515z"/>
+                        </svg>
+                    </div>
+                    <div class="contact-info">
+                        <span class="contact-label">телеграм</span>
+                        <span class="contact-value dim">@boolean</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== ПРОЕКТЫ ==================== -->
+        <section>
+            <div class="section-label">// проекты</div>
+            <div class="project-list">
+                <div class="project-item">
+                    <span class="project-name">crackhash-rs</span>
+                    <span class="project-tag">rust</span>
+                </div>
+                <div class="project-item">
+                    <span class="project-name">web-fuzzer</span>
+                    <span class="project-tag">python</span>
+                </div>
+                <div class="project-item">
+                    <span class="project-name">quantum-sim</span>
+                    <span class="project-tag">c++</span>
+                </div>
+                <div class="project-item">
+                    <span class="project-name">payload-gen</span>
+                    <span class="project-tag">golang</span>
+                </div>
+                <div class="project-item">
+                    <span class="project-name">lab-report-parser</span>
+                    <span class="project-tag">python</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== ПОДВАЛ ==================== -->
+        <footer class="footer">
+            <p>boolean © <span>2026</span> — изолированная среда — все права защищены</p>
+            <p style="margin-top: 4px;">пентестер / dev / chem-phys</p>
+        </footer>
+
+    </div>
+
+</body>
+</html>
