@@ -280,6 +280,11 @@ physics.addContactMaterial(new CANNON.ContactMaterial(MAT_WORLD, MAT_WORLD, { fr
 
 const grabSurfaces = [];  // { mesh, box }
 
+/* Сцена создаётся здесь — раньше top-level THREE-объектов ниже (gibMesh, арена и т.д.) */
+buildTextures();
+initScene();
+buildArena();
+
 function addBox(size, pos, opt = {}) {
   const { tex = TEX.wall, color = 0xffffff, grab = true, mass = 0, shape = 'box' } = opt;
   const mat = new THREE.MeshStandardMaterial({ map: tex, color, roughness: 0.9 });
@@ -447,12 +452,14 @@ class CharacterRig {
     this.tube = makeTube();
     this.aiTimer = Math.random() * 5;
     this.aiDir = new THREE.Vector3(1, 0, 0);
+    this.spawn = spawn.clone();        // сохраняем точку спавна для build()
     this.build();
     rigs.push(this);
   }
 
   build() {
     const s = this.scale;
+    const spawn = this.spawn;          // доступ к точке спавна внутри build()
     const skinTex = this.isMonster ? TEX.monsterSkin : TEX.skin;
     const tint = this.isMonster ? 0xff7a5a : 0xffffff;
     const d = this.isMonster
@@ -574,7 +581,7 @@ class CharacterRig {
       });
       physics.addConstraint(j);
       this.joints.push({ c: j, a: bA.userData.part, b: bB.userData.part,
-        base: pivotA.length() * s * 1.02 });
+        base: Math.max(pivotA.x, pivotA.y, pivotA.z) * s * 1.02 });
     };
     const B = this.bodies;
     cone(B.pelvis, B.waist, { x: 0, y: 0.12, z: 0 }, { x: 0, y: -0.12, z: 0 }, Math.PI / 5);
@@ -1212,7 +1219,7 @@ const Input = {
       if (e.code === 'KeyF') this.pcFist = false;
     });
     renderer.domElement.addEventListener('click', () => {
-      Audio.ensure();
+      try { Audio.ensure(); } catch (e) {}
       if (!S.inVR) renderer.domElement.requestPointerLock();
     });
     addEventListener('mousemove', (e) => {
@@ -1586,7 +1593,9 @@ function makeTextSprite() {
 }
 function animate() {
   renderer.setAnimationLoop((t) => {
+    try {
     const dt = Math.min(clock.getDelta(), 0.05);
+    if (!animate._started) { animate._started = true; console.log('LOOP STARTED'); }
     Input.pollXR();
     Input.updatePC(dt);
     updateVRMenuRay();
@@ -1630,13 +1639,15 @@ function animate() {
       st.textContent = rigs.filter(r => !r.gibbed).map(r => `${r.name}:${r.state}${r.dead ? ' DEAD' : ''}`).join(' | ')
         + ` | role:${S.role}`;
     } else st.textContent = `role: ${S.role}`;
+    } catch (loopErr) {
+      console.error('LOOP:', loopErr.message, loopErr.stack);
+      renderer.setAnimationLoop(null);
+    }
   });
 }
 
 /* ===== СЕКЦИЯ: ЗАПУСК ===== */
-buildTextures();
-initScene();
-buildArena();
+/* buildTextures/initScene/buildArena уже вызваны выше (до создания top-level мешей) */
 Input.init();
 buildVRMenu();
 buildRayLines();
