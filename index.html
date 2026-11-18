@@ -1,1680 +1,399 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RILLA — VR Gorilla Game</title>
-<style>
-  html, body { margin:0; padding:0; overflow:hidden; background:#000; width:100%; height:100%;
-    font-family:'Segoe UI', Arial, sans-serif; user-select:none; }
-  #ui { position:fixed; top:0; left:0; width:330px; max-height:100vh; overflow-y:auto;
-    background:rgba(10,14,20,0.92); color:#cfe; border-right:2px solid #3af; z-index:10;
-    padding:10px; font-size:13px; }
-  #ui h1 { font-size:18px; color:#4cf; margin:4px 0; }
-  #ui h2 { font-size:13px; color:#8df; margin:10px 0 4px; border-bottom:1px solid #246; }
-  #ui button { display:inline-block; margin:2px; padding:5px 8px; background:#16324a; color:#cfe;
-    border:1px solid #3af; border-radius:4px; cursor:pointer; font-size:12px; }
-  #ui button:hover { background:#2a5a80; }
-  #ui button.on { background:#3a7; color:#021; border-color:#3a7; }
-  #fps { position:fixed; top:4px; right:8px; color:#4f4; font:12px monospace; z-index:11;
-    background:rgba(0,0,0,.5); padding:2px 6px; border-radius:4px; }
-  #state { position:fixed; top:26px; right:8px; color:#fc6; font:12px monospace; z-index:11;
-    background:rgba(0,0,0,.5); padding:2px 6px; border-radius:4px; max-width:40ch; }
-  #hint { position:fixed; bottom:4px; left:50%; transform:translateX(-50%); color:#aaa;
-    font:11px monospace; z-index:11; background:rgba(0,0,0,.4); padding:2px 8px; border-radius:4px; }
-  #enterVR { position:fixed; bottom:34px; right:10px; z-index:12; padding:10px 18px; font-size:15px;
-    background:#2a5; color:#021; border:none; border-radius:6px; cursor:pointer; }
-  canvas { display:block; }
-</style>
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-    "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
-  }
-}
-</script>
-</head>
-<body>
-<div id="ui">
-  <h1>RILLA — меню разработчика</h1>
-  <div id="fps">FPS: --</div><div id="state"></div>
-  <h2>Спавн</h2>
-  <div>
-    <button data-act="spawnNpcPlayer">NPC-игрок</button>
-    <button data-act="spawnNpcMonster">NPC-монстр</button>
-    <button data-act="spawnRagdoll">Рэгдолл</button>
-    <button data-act="spawnCrate">Ящик</button>
-    <button data-act="spawnBarrel">Бочка</button>
-    <button data-act="spawnBall">Шар</button>
-  </div>
-  <h2>Роль</h2>
-  <div>
-    <button data-act="rolePlayer">Стать игроком</button>
-    <button data-act="roleMonster">Стать монстром</button>
-  </div>
-  <h2>Зеркало / Аксессуары</h2>
-  <div>
-    <button data-act="mirror">Зеркало: выкл</button>
-    <button data-act="hat">Шляпа</button>
-    <button data-act="glasses">Очки</button>
-    <button data-act="scarf">Шарф</button>
-  </div>
-  <h2>Фильтр цвета текстур</h2>
-  <div>
-    <button data-act="tintNormal">Обычный</button>
-    <button data-act="tintGray">Серый</button>
-    <button data-act="tintRed">Красный</button>
-    <button data-act="tintBlue">Синий</button>
-    <button data-act="tintInvert">Инверсия</button>
-  </div>
-  <h2>Тесты (к ближайшему NPC)</h2>
-  <div>
-    <button data-act="testSplit">Разорвать на 2 части</button>
-    <button data-act="testHead">Оторвать голову</button>
-    <button data-act="testArm">Оторвать руку</button>
-    <button data-act="testLeg">Оторвать ногу</button>
-    <button data-act="testThrow">Бросок в стену</button>
-    <button data-act="testPunch3">3 удара кулаком</button>
-    <button data-act="testPunch1">1 удар (нокдаун)</button>
-  </div>
-  <h2>Отладка</h2>
-  <div>
-    <button data-act="debugColliders">Коллайдеры</button>
-    <button data-act="debugStates">Состояния</button>
-    <button data-act="clearAll">Убрать всех NPC</button>
-  </div>
-</div>
-<button id="enterVR">Войти в VR</button>
-<div id="hint">ПК: клик = захват мыши | WASD | SPACE прыжок | ЛКМ правая рука, ПКМ левая (удерж = хват) | F кулак | TAB меню</div>
-
-<script type="module">
+<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><title>Rilla VR</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;overflow:hidden;background:#111}#hint{position:fixed;left:8px;top:8px;color:#fff;font:12px/1.4 sans-serif;background:#0008;padding:6px 8px;border-radius:6px;white-space:pre;pointer-events:none}</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head><body><div id="hint"></div><script type="module">
 import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
-import { Reflector } from 'three/addons/objects/Reflector.js';
+import {VRButton} from 'three/addons/webxr/VRButton.js';
+import {Reflector} from 'three/addons/objects/Reflector.js';
+/* Rilla VR: three.js + WebXR. Физика своя (сферы vs AABB) вместо cannon-es — легче для Quest. */
 
-/* ===== СЕКЦИЯ: КОНСТАНТЫ ===== */
-const GRAB_RADIUS = 0.6;    // радиус хвата (по ТЗ)
-const GRAB_K = 22;          // жёсткость пружины хвата
-const RELEASE_BOOST = 0.9;  // доля скорости кисти при отпускании
-const MAX_SPEED = 9;
-const WALK_SPEED = 4;
-const JUMP_V = 5.2;
-const STRETCH_MULT = 1.5;   // порог растяжения сустава (× базовой длины)
-const IMPACT_KILL = 8.0;    // удар о стену в рэгдолле → гибель
-const PUNCH_SPEED = 3.0;
-const REVIVE_TIME = 4.0;    // воскрешение после нокдауна (сек)
-const NPC_MAX = 6;
-// коэффициенты монстра (1.15–1.25 по ТЗ)
-const MONSTER_K = { jump: 1.2, push: 1.18, control: 0.9, reach: 1.15 };
+/* ===== РЕНДЕР ===== */
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);
+renderer.xr.enabled=true;renderer.xr.setReferenceSpaceType('local-floor');
+document.body.appendChild(renderer.domElement);document.body.appendChild(VRButton.createButton(renderer));
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,120);camera.position.y=1.6;camera.rotation.order='YXZ';
+const rig=new THREE.Group();rig.add(camera);scene.add(rig);   // rig = «пол» игрока
+const hemi=new THREE.HemisphereLight(0xfff4e6,0x8d7f6e,1.1);scene.add(hemi);
+const sun=new THREE.DirectionalLight(0xffffff,.35);sun.position.set(3,8,4);scene.add(sun);
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
 
-/* ===== СЕКЦИЯ: СОСТОЯНИЕ ===== */
-const S = {
-  role: 'player',           // 'player' | 'monster'
-  mirror: false,
-  accessories: { hat: false, glasses: false, scarf: false },
-  tintMode: 'normal',
-  debugColliders: false,
-  debugStates: false,
-  inVR: false,
+/* ===== ПРОЦЕДУРНЫЕ ТЕКСТУРЫ ===== */
+const rnd=(s=>()=>(s=(s*16807)%2147483647)/2147483647)(777);
+function cvs(w,h,f){const c=document.createElement('canvas');c.width=w;c.height=h;f(c.getContext('2d'),w,h);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.anisotropy=4;return t;}
+const T={
+ wood:cvs(256,256,(g,w,h)=>{for(let i=0;i<8;i++){g.fillStyle=`hsl(30,${40+rnd()*10}%,${42+rnd()*12}%)`;g.fillRect(0,i*32,w,31);}}),
+ wall:cvs(128,128,(g,w,h)=>{g.fillStyle='#efe3cf';g.fillRect(0,0,w,h);g.fillStyle='#e2d3b8';for(let x=0;x<w;x+=16)g.fillRect(x,0,6,h);}),
+ tile:cvs(128,128,(g,w,h)=>{g.fillStyle='#dfe3ea';g.fillRect(0,0,w,h);g.strokeStyle='#9aa3b5';g.lineWidth=3;g.strokeRect(0,0,w,h);}),
+ bwall:cvs(128,128,(g,w,h)=>{g.fillStyle='#cbb65a';g.fillRect(0,0,w,h);g.fillStyle='#b8a247';for(let x=0;x<w;x+=20)g.fillRect(x,0,8,h);for(let i=0;i<14;i++){g.fillStyle='rgba(90,70,10,.08)';g.beginPath();g.arc(rnd()*w,rnd()*h,8+rnd()*16,0,7);g.fill();}}),
+ bcarp:cvs(128,128,(g,w,h)=>{g.fillStyle='#8c7c38';g.fillRect(0,0,w,h);for(let i=0;i<1500;i++){g.fillStyle=`rgba(${60+rnd()*60|0},${50+rnd()*50|0},10,.35)`;g.fillRect(rnd()*w,rnd()*h,2,2);}}),
+ fur:cvs(128,128,(g,w,h)=>{g.fillStyle='#e0e0e0';g.fillRect(0,0,w,h);for(let i=0;i<900;i++){const v=150+rnd()*90|0;g.fillStyle=`rgb(${v},${v},${v})`;g.fillRect(rnd()*w,rnd()*h,2,6);}}),
+ rug:cvs(256,256,(g,w,h)=>{['#8a3b3b','#e8d9b5','#3b5d8a','#e8d9b5','#c98a3b'].forEach((c,i)=>{g.fillStyle=c;g.beginPath();g.arc(128,128,126-i*24,0,7);g.fill();});})
 };
-let scene, camera, renderer, clock;
-const rigs = [];
-const dynamicProps = [];
-let mirrorMesh = null;
-let local = null;
-let vrMenu = null;
+function M(tex,rx=1,ry=1,color=0xffffff){const t=tex.clone();t.needsUpdate=true;t.repeat.set(rx,ry);return new THREE.MeshLambertMaterial({map:t,color});}
+const plain=c=>new THREE.MeshLambertMaterial({color:c});
+function sign(text,w,h,bg='#223',fg='#fff'){return new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({map:cvs(512,Math.round(512*h/w),(g,cw,ch)=>{g.fillStyle=bg;g.fillRect(0,0,cw,ch);g.fillStyle=fg;g.font='bold 44px sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(text,cw/2,ch/2);})}));}
 
-/* ===== СЕКЦИЯ: ЗВУК (WebAudio, процедурный) ===== */
-const Audio = (() => {
-  let ctx = null, noiseBuf = null;
-  function ensure() {
-    if (!ctx) {
-      ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const len = ctx.sampleRate * 0.5;
-      noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
-      const d = noiseBuf.getChannelData(0);
-      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-    }
-    if (ctx.state === 'suspended') ctx.resume();
-    return ctx;
-  }
-  function noise(dur = 0.15, freq = 800, vol = 0.3, type = 'lowpass') {
-    try {
-      const c = ensure(); const src = c.createBufferSource(); src.buffer = noiseBuf;
-      const f = c.createBiquadFilter(); f.type = type; f.frequency.value = freq;
-      const g = c.createGain(); g.gain.setValueAtTime(vol, c.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur);
-      src.connect(f); f.connect(g); g.connect(c.destination);
-      src.start(); src.stop(c.currentTime + dur);
-    } catch (e) { /* до первого жеста аудио может быть заблокировано */ }
-  }
-  function tone(freq = 200, dur = 0.1, vol = 0.2, slide = -100) {
-    try {
-      const c = ensure(); const o = c.createOscillator(); o.type = 'sine';
-      o.frequency.setValueAtTime(freq, c.currentTime);
-      o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), c.currentTime + dur);
-      const g = c.createGain(); g.gain.setValueAtTime(vol, c.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur);
-      o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + dur);
-    } catch (e) {}
-  }
-  return {
-    grab: () => noise(0.08, 1200, 0.15),
-    release: (v) => noise(0.10, 500 + v * 60, 0.2),
-    punch: () => { noise(0.12, 300, 0.5); tone(90, 0.12, 0.3, -60); },
-    tear: () => { noise(0.4, 900, 0.5, 'bandpass'); tone(160, 0.35, 0.25, -120); },
-    gib: () => { noise(0.5, 200, 0.6); tone(60, 0.5, 0.4, -40); },
-    die: () => tone(220, 0.6, 0.3, -180),
-    jump: () => tone(300, 0.12, 0.15, 150),
-    click: () => tone(700, 0.05, 0.1, 0),
-  };
-})();
-
-/* ===== СЕКЦИЯ: ПРОЦЕДУРНЫЕ ТЕКСТУРЫ ===== */
-const TEX = {};
-function makeCanvas(w, h) {
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  return [c, c.getContext('2d')];
+/* ===== МИР: коллайдеры (AABB) — всё это grabSurfaces ===== */
+const colliders=[];
+function box(x,y,z,w,h,d,mat,solid=true){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);scene.add(m);if(solid)colliders.push({min:new THREE.Vector3(x-w/2,y-h/2,z-d/2),max:new THREE.Vector3(x+w/2,y+h/2,z+d/2)});return m;}
+function room(cx,cz,w,d,h,fT,wT,ceil){
+ box(cx,-.25,cz,w,.5,d,M(fT[0],w/fT[1],d/fT[1]));
+ const wm=(l)=>M(wT[0],l/wT[1],h/wT[1]);
+ box(cx,h/2,cz-d/2-.2,w+.8,h,.4,wm(w));box(cx,h/2,cz+d/2+.2,w+.8,h,.4,wm(w));
+ box(cx-w/2-.2,h/2,cz,.4,h,d,wm(d));box(cx+w/2+.2,h/2,cz,.4,h,d,wm(d));
+ if(ceil)box(cx,h+.2,cz,w+.8,.4,d+.8,ceil);
 }
-function buildTextures() {
-  let [c, g] = makeCanvas(128, 128);            // кожа гориллы
-  g.fillStyle = '#4a3226'; g.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 900; i++) {
-    g.fillStyle = `rgba(${40 + Math.random() * 40 | 0},${25 + Math.random() * 25 | 0},${15 + Math.random() * 15 | 0},0.5)`;
-    g.beginPath(); g.arc(Math.random() * 128, Math.random() * 128, 1 + Math.random() * 3, 0, 7); g.fill();
-  }
-  TEX.skin = new THREE.CanvasTexture(c);
-  TEX.skin.wrapS = TEX.skin.wrapT = THREE.RepeatWrapping;
-  [c, g] = makeCanvas(128, 128);                // кожа монстра
-  g.fillStyle = '#3a1410'; g.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 700; i++) {
-    g.fillStyle = `rgba(${90 + Math.random() * 60 | 0},${15 + Math.random() * 15 | 0},10,0.5)`;
-    g.beginPath(); g.arc(Math.random() * 128, Math.random() * 128, 1 + Math.random() * 4, 0, 7); g.fill();
-  }
-  TEX.monsterSkin = new THREE.CanvasTexture(c);
-  TEX.monsterSkin.wrapS = TEX.monsterSkin.wrapT = THREE.RepeatWrapping;
-  [c, g] = makeCanvas(64, 64);                  // одежда
-  g.fillStyle = '#2a4d6e'; g.fillRect(0, 0, 64, 64);
-  for (let i = 0; i < 40; i++) {
-    g.strokeStyle = 'rgba(255,255,255,0.08)'; g.beginPath();
-    g.moveTo(Math.random() * 64, 0); g.lineTo(Math.random() * 64, 64); g.stroke();
-  }
-  TEX.cloth = new THREE.CanvasTexture(c);
-  TEX.cloth.wrapS = TEX.cloth.wrapT = THREE.RepeatWrapping;
-  [c, g] = makeCanvas(256, 256);                // стены
-  g.fillStyle = '#5a6a58'; g.fillRect(0, 0, 256, 256);
-  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
-    const sh = Math.random() * 20 | 0;
-    g.fillStyle = `rgb(${70 + sh},${85 + sh},${70 + sh})`;
-    g.fillRect(x * 32 + 1, y * 32 + 1, 30, 30);
-  }
-  TEX.wall = new THREE.CanvasTexture(c);
-  TEX.wall.wrapS = TEX.wall.wrapT = THREE.RepeatWrapping;
-  TEX.wall.repeat.set(6, 2);
-  [c, g] = makeCanvas(256, 256);                // пол
-  g.fillStyle = '#3d4a3c'; g.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 2500; i++) {
-    g.fillStyle = `rgba(${30 + Math.random() * 50 | 0},${45 + Math.random() * 50 | 0},${30 + Math.random() * 40 | 0},0.4)`;
-    g.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
-  }
-  TEX.floor = new THREE.CanvasTexture(c);
-  TEX.floor.wrapS = TEX.floor.wrapT = THREE.RepeatWrapping;
-  TEX.floor.repeat.set(10, 10);
-  TEX.blood = [];                               // декали крови
-  for (let k = 0; k < 4; k++) {
-    [c, g] = makeCanvas(128, 128);
-    for (let i = 0; i < 60; i++) {
-      const r = 3 + Math.random() * 22, a = Math.random() * 7, d = Math.random() * 44;
-      g.fillStyle = `rgba(${90 + Math.random() * 50 | 0},5,5,${0.5 + Math.random() * 0.5})`;
-      g.beginPath(); g.arc(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, r, 0, 7); g.fill();
-    }
-    TEX.blood.push(new THREE.CanvasTexture(c));
-  }
+const emis=new THREE.MeshBasicMaterial({color:0xfff2d8});
+function plant(x,z){box(x,.2,z,.4,.4,.4,plain(0x6b4a2f));const l=new THREE.Mesh(new THREE.SphereGeometry(.35,10,8),plain(0x3f9a4a));l.position.set(x,.75,z);scene.add(l);}
+
+/* --- Зона 0: главная комната (настройка персонажа) --- */
+room(0,0,12,12,3.4,[T.wood,3],[T.wall,3],plain(0xf4ead8));
+for(const [x,z] of[[-2.5,-2.5],[2.5,-2.5],[-2.5,2.5],[2.5,2.5]]){const p=new THREE.Mesh(new THREE.PlaneGeometry(1.6,1.6),emis);p.rotation.x=Math.PI/2;p.position.set(x,3.38,z);scene.add(p);}
+for(const [x,z] of[[-3,-3],[3,3]]){const l=new THREE.PointLight(0xffd9a8,7,12,2);l.position.set(x,2.8,z);scene.add(l);}
+const rug=new THREE.Mesh(new THREE.CircleGeometry(2.4,32),new THREE.MeshLambertMaterial({map:T.rug}));rug.rotation.x=-Math.PI/2;rug.position.set(0,.01,1);scene.add(rug);
+box(4,.25,3.5,2.2,.5,.9,plain(0x7a5c8f));box(4,.7,3.9,2.2,.6,.25,plain(0x6a4c7f));
+box(5.75,1,-1,.4,2,2.5,plain(0x8a6b4a));
+for(let i=0;i<6;i++)box(5.5,.6+(i%3)*.6,-1.8+i*.35,.2,.3,.25,plain([0xd94040,0x3f6fe0,0xf2d03b][i%3]),false);
+[[-5.2,-5.2],[5.2,-5.2],[-5.2,5.2],[5.2,5.2],[-5.2,3]].forEach(p=>plant(...p));
+const mirrorGroup=new THREE.Group();scene.add(mirrorGroup);
+{const fr=new THREE.Mesh(new THREE.BoxGeometry(.1,2.7,2.5),plain(0x3a2a1a));fr.position.set(-5.97,1.6,0);mirrorGroup.add(fr);
+ const mr=new Reflector(new THREE.PlaneGeometry(2.3,2.5),{textureWidth:512,textureHeight:512,color:0xcccccc,clipBias:.003});mr.position.set(-5.9,1.6,0);mr.rotation.y=Math.PI/2;mirrorGroup.add(mr);}
+/* Компьютер на задней стене */
+const sign0=sign('RILLA — настройка персонажа',2.4,.5,'#2a1f3a');sign0.position.set(0,2.5,-5.97);scene.add(sign0);
+box(0,.4,-5.4,2.2,.8,.9,plain(0x5a4a3a));
+box(0,1.15,-5.7,1.1,.7,.06,plain(0x111111));
+const scr=document.createElement('canvas');scr.width=512;scr.height=300;const sg=scr.getContext('2d');const sTex=new THREE.CanvasTexture(scr);sTex.colorSpace=THREE.SRGBColorSpace;
+const screen=new THREE.Mesh(new THREE.PlaneGeometry(1,.6),new THREE.MeshBasicMaterial({map:sTex}));screen.position.set(0,1.15,-5.665);scene.add(screen);
+const panel=new THREE.Group();panel.position.set(0,.84,-5.12);panel.rotation.x=.5;scene.add(panel);
+panel.add(new THREE.Mesh(new THREE.BoxGeometry(.64,.03,.4),plain(0x222222)));
+
+/* --- Зона 1: тестовая --- */
+const TX=40;
+room(TX,0,22,22,7,[T.tile,4],[T.wall,3],null);
+{const s=sign('ТЕСТ-ЗОНА',3,.6,'#124','#8cf');s.position.set(TX,3,-10.97);scene.add(s);}
+[[-5,-4],[6,-6],[0,6]].forEach(([x,z])=>box(TX+x,1.5,z,.6,3,.6,plain(0x6a7a99)));
+box(TX+8,1,5,5,2,.5,plain(0x99806a));
+for(const [x,z] of[[-5,-5],[0,0],[5,-5]]){const d=new THREE.Mesh(new THREE.CircleGeometry(.9,24),plain(0x445));d.rotation.x=-Math.PI/2;d.position.set(TX+x,.01,z);scene.add(d);}
+
+/* --- Зона 2: Backrooms --- */
+const BX=-60,N=10,CS=4;
+room(BX,0,N*CS,N*CS,3,[T.bcarp,3],[T.bwall,3],plain(0xd8cf9a));
+{const wm=M(T.bwall,1.3,1);
+ for(let i=1;i<N;i++)for(let j=0;j<N;j++){
+  const vx=BX-N*CS/2+i*CS,vz=-N*CS/2+j*CS+CS/2;
+  if(Math.hypot(vx-BX,vz)>5&&rnd()<.33)box(vx,1.5,vz,.3,3,CS,wm);
+  const hx=BX-N*CS/2+j*CS+CS/2,hz=-N*CS/2+i*CS;
+  if(Math.hypot(hx-BX,hz)>5&&rnd()<.33)box(hx,1.5,hz,CS,3,.3,wm);}
+ for(let i=0;i<5;i++)for(let j=0;j<5;j++){const p=new THREE.Mesh(new THREE.PlaneGeometry(1.2,.6),emis);p.rotation.x=Math.PI/2;p.position.set(BX-16+i*8,2.98,-16+j*8);scene.add(p);}}
+const backLight=new THREE.PointLight(0xfff0a0,0,14,2);scene.add(backLight);
+
+/* ===== ЗОНЫ / ТЕЛЕПОРТ ===== */
+const ZONES=[{n:'Главная',p:[0,0,0],bg:0xf3e6d3,fog:null,h:1.1},{n:'Тест',p:[TX,0,8],bg:0xcfd8e8,fog:new THREE.Fog(0xcfd8e8,30,70),h:1.0},{n:'Backrooms',p:[BX+2,0,2],bg:0x6b6322,fog:new THREE.Fog(0x6b6322,3,22),h:.8}];
+let zone=0;
+function setZone(i){zone=i;const z=ZONES[i];rig.position.set(...z.p);rig.rotation.y=0;P.vel.set(0,0,0);scene.background=new THREE.Color(z.bg);scene.fog=z.fog;hemi.intensity=z.h;backLight.intensity=i===2?6:0;}
+
+/* ===== ГИБКИЕ ПАЛЬЦЫ / РУКА ===== */
+function makeHand(side,mat){
+ const g=new THREE.Group(),s=side==='left'?-1:1;g.f={};g.claws=[];
+ const palm=new THREE.Mesh(new THREE.SphereGeometry(1,16,12),mat);palm.scale.set(.046,.02,.052);palm.position.z=-.03;g.add(palm);
+ const cuff=new THREE.Mesh(new THREE.CylinderGeometry(.03,.035,.06,12),plain(0x222a33));cuff.rotation.x=Math.PI/2;cuff.position.z=.04;g.add(cuff);
+ const cap=(l,r)=>{const m=new THREE.Mesh(new THREE.CapsuleGeometry(r,l,4,8),mat);m.rotation.x=Math.PI/2;m.position.z=-l/2;return m;};
+ const mk=(k,x,z,len,r,yaw)=>{const p1=new THREE.Group();p1.position.set(x,0,z);p1.rotation.y=yaw;p1.add(cap(len,r));
+  const p2=new THREE.Group();p2.position.z=-len;p2.add(cap(len*.85,r*.9));
+  const c=new THREE.Mesh(new THREE.ConeGeometry(r*.8,.05,6),plain(0x1a1a1a));c.rotation.x=-Math.PI/2;c.position.z=-len*.85-r-.02;c.visible=false;p2.add(c);g.claws.push(c);
+  const tip=new THREE.Object3D();tip.position.z=-len*.85-r;p2.add(tip);p1.add(p2);g.add(p1);g.f[k]={p1,p2,tip};};
+ mk('t',-s*.05,-.035,.04,.012,.45*s);mk('i',-s*.022,-.07,.055,.0105,0);mk('m',s*.014,-.072,.06,.0105,0);
+ g.tip=g.f.i.tip;return g;
 }
+function monsterHand(g,on){g.claws.forEach(c=>c.visible=on);g.scale.setScalar(on?1.5:1);}
+function setCurl(g,i,m,t){const f=g.f;f.i.p1.rotation.x=-i*1.2;f.i.p2.rotation.x=-i*1.3;f.m.p1.rotation.x=-m*1.2;f.m.p2.rotation.x=-m*1.3;f.t.p1.rotation.x=-t*.8;f.t.p2.rotation.x=-t*.9;}
 
-/* ===== СЕКЦИЯ: СЦЕНА / XR ===== */
-function initScene() {
-  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setSize(innerWidth, innerHeight);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); // Quest: ради 60 fps
-  renderer.xr.enabled = true;
-  renderer.xr.setReferenceSpaceType('local-floor');        // по ТЗ
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  document.body.appendChild(renderer.domElement);
-  addEventListener('resize', () => {
-    camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
-  });
-
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0c141c);
-  scene.fog = new THREE.Fog(0x0c141c, 25, 70);
-
-  camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 200);
-  // XR-rig: камера внутри группы, snap-turn вращает группу вокруг головы
-  const rig = new THREE.Group(); rig.add(camera); scene.add(rig);
-  scene.userData.rig = rig;
-
-  scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x30281a, 0.9));
-  const sun = new THREE.DirectionalLight(0xfff2d8, 1.3);
-  sun.position.set(10, 18, 6); sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
-  sun.shadow.camera.left = -25; sun.shadow.camera.right = 25;
-  sun.shadow.camera.top = 25; sun.shadow.camera.bottom = -25;
-  scene.add(sun);
-
-  clock = new THREE.Clock();
+/* ===== АВАТАР (модель как в Gorilla Tag: голова, торс, длинные руки) ===== */
+const UP=new THREE.Vector3(0,1,0),_t=new THREE.Vector3(),_e=new THREE.Euler();
+const yawOf=q=>{_e.setFromQuaternion(q,'YXZ');return _e.y;};
+function seg(m,a,b,r=1){_t.subVectors(b,a);const l=_t.length();m.position.copy(a).addScaledVector(_t,.5);m.scale.set(r,Math.max(l,1e-3),r);m.quaternion.setFromUnitVectors(UP,_t.divideScalar(l||1));}
+const DN=new THREE.Vector3(0,-1,0);
+function makeAvatar(col,withHands){
+ const A={g:new THREE.Group(),k:1};A.skin=new THREE.MeshLambertMaterial({color:col,map:T.fur});
+ const white=plain(0xffffff),black=plain(0x111111),S=(r,m)=>new THREE.Mesh(new THREE.SphereGeometry(r,12,8),m);
+ const head=A.head=new THREE.Group();head.add(S(.15,A.skin));
+ for(const sx of[-1,1]){const e=S(.035,white);e.position.set(sx*.06,.03,-.12);head.add(e);const p=S(.018,black);p.position.set(sx*.06,.03,-.15);head.add(p);}
+ const nose=S(.025,A.skin);nose.position.set(0,-.01,-.15);head.add(nose);
+ const mouth=new THREE.Mesh(new THREE.BoxGeometry(.07,.012,.01),black);mouth.position.set(0,-.06,-.138);head.add(mouth);
+ A.maw=new THREE.Group();{const b=new THREE.Mesh(new THREE.BoxGeometry(.14,.08,.03),plain(0x300))
+  ;b.position.set(0,-.07,-.13);A.maw.add(b);for(let i=-2;i<=2;i++){const t=new THREE.Mesh(new THREE.ConeGeometry(.012,.04,5),white);t.rotation.x=Math.PI;t.position.set(i*.027,-.045,-.148);A.maw.add(t);}}A.maw.visible=false;head.add(A.maw);
+ A.hat=new THREE.Group();{const b=new THREE.Mesh(new THREE.CylinderGeometry(.21,.21,.02,16),plain(0xc02030));b.position.y=.13;const t=new THREE.Mesh(new THREE.CylinderGeometry(.11,.12,.14,16),plain(0xc02030));t.position.y=.2;A.hat.add(b,t);}
+ A.glasses=new THREE.Group();for(const sx of[-1,1]){const r=new THREE.Mesh(new THREE.TorusGeometry(.04,.006,6,14),black);r.position.set(sx*.06,.03,-.145);A.glasses.add(r);}
+ head.add(A.hat,A.glasses);
+ A.torso=new THREE.Mesh(new THREE.CapsuleGeometry(.17,.35,4,10),A.skin);
+ A.scarf=new THREE.Mesh(new THREE.TorusGeometry(.17,.05,8,16),plain(0x2f7fd0));A.scarf.rotation.x=Math.PI/2;A.scarf.position.y=.3;A.torso.add(A.scarf);
+ A.neck=new THREE.Mesh(new THREE.CylinderGeometry(.06,.07,1,8),A.skin);
+ const cyl=()=>new THREE.Mesh(new THREE.CylinderGeometry(.04,.045,1,8),A.skin);
+ A.arms=[0,1].map(()=>({a:cyl(),b:cyl(),e:S(.05,A.skin),s:S(.06,A.skin)}));
+ A.g.add(head,A.torso,A.neck);A.arms.forEach(o=>A.g.add(o.a,o.b,o.e,o.s));
+ if(withHands){A.hL=makeHand('left',A.skin);A.hR=makeHand('right',A.skin);A.g.add(A.hL,A.hR);}
+ const right=new THREE.Vector3(),fwd=new THREE.Vector3(),sh=new THREE.Vector3(),el=new THREE.Vector3(),top=new THREE.Vector3(),dn=new THREE.Vector3();
+ // o = состояние жертвы: arms[2] (есть ли рука), thin[3] (утончение кожи при растяжении: рука L, рука R, шея)
+ A.update=(hp,hq,L,R,down=DN,curl=.3,o=null)=>{
+  const K=A.k,yaw=yawOf(hq);right.set(Math.cos(yaw),0,-Math.sin(yaw));fwd.set(-Math.sin(yaw),0,-Math.cos(yaw));
+  head.position.copy(hp);head.quaternion.copy(hq);head.scale.setScalar(K);A.torso.scale.setScalar(K);
+  A.torso.position.copy(hp).addScaledVector(down,.45*K);A.torso.quaternion.setFromUnitVectors(UP,dn.copy(down).negate());
+  top.copy(hp).addScaledVector(down,.2*K);
+  seg(A.neck,hp,top,(o?o.thin[2]:1)*K);A.neck.visible=!o||o.thin[2]>0;
+  [[L,-1],[R,1]].forEach(([hand,sd],i)=>{const a=A.arms[i],hm=i?A.hR:A.hL,on=!o||o.arms[i],th=(o?o.thin[i]:1)*K;
+   [a.a,a.b,a.e,a.s].forEach(m=>m.visible=!!on);if(hm)hm.visible=!!on;if(!on)return;
+   sh.copy(top).addScaledVector(right,sd*.22*K).addScaledVector(down,.05*K);
+   el.addVectors(sh,hand).multiplyScalar(.5).addScaledVector(down,.1*K).addScaledVector(fwd,-.08*K);
+   seg(a.a,sh,el,th);seg(a.b,el,hand,th);a.e.position.copy(el);a.s.position.copy(sh);a.e.scale.setScalar(th);a.s.scale.setScalar(K);
+   if(hm){hm.position.copy(hand);hm.rotation.set(0,yaw,0);setCurl(hm,curl,curl,curl);}});};
+ return A;
 }
 
-/* ===== СЕКЦИЯ: ФИЗИКА + АРЕНА ===== */
-const physics = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
-physics.broadphase = new CANNON.SAPBroadphase(physics);
-physics.allowSleep = true;
-physics.defaultContactMaterial.friction = 0.4;
-const MAT_WORLD = new CANNON.Material('world');
-// трение 0.9, чтобы цепляться (по ТЗ)
-physics.addContactMaterial(new CANNON.ContactMaterial(MAT_WORLD, MAT_WORLD, { friction: 0.9, restitution: 0 }));
-
-const grabSurfaces = [];  // { mesh, box }
-
-/* Сцена создаётся здесь — раньше top-level THREE-объектов ниже (gibMesh, арена и т.д.) */
-buildTextures();
-initScene();
-buildArena();
-
-function addBox(size, pos, opt = {}) {
-  const { tex = TEX.wall, color = 0xffffff, grab = true, mass = 0, shape = 'box' } = opt;
-  const mat = new THREE.MeshStandardMaterial({ map: tex, color, roughness: 0.9 });
-  let mesh;
-  if (shape === 'sphere') mesh = new THREE.Mesh(new THREE.SphereGeometry(size.x, 20, 16), mat);
-  else if (shape === 'cyl') mesh = new THREE.Mesh(new THREE.CylinderGeometry(size.x, size.x, size.y, 16), mat);
-  else mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), mat);
-  mesh.castShadow = true; mesh.receiveShadow = true;
-  scene.add(mesh);
-  const sh = shape === 'sphere' ? new CANNON.Sphere(size.x)
-    : shape === 'cyl' ? new CANNON.Cylinder(size.x, size.x, size.y, 10)
-    : new CANNON.Box(new CANNON.Vec3(size.x / 2, size.y / 2, size.z / 2));
-  const body = new CANNON.Body({
-    mass, material: MAT_WORLD, shape: sh,
-    linearDamping: mass > 0 ? 0.05 : 0, angularDamping: mass > 0 ? 0.1 : 0,
-  });
-  body.position.set(pos.x, pos.y, pos.z);
-  physics.addBody(body);
-  const entry = { mesh, body, grab, dynamic: mass > 0, box: new THREE.Box3() };
-  mesh.userData.entry = entry;
-  if (grab) (mass > 0 ? dynamicProps : grabSurfaces).push(entry);
-  return entry;
-}
-
-function buildArena() {
-  const floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(60, 60),
-    new THREE.MeshStandardMaterial({ map: TEX.floor }));
-  floorMesh.rotation.x = -Math.PI / 2; floorMesh.receiveShadow = true; scene.add(floorMesh);
-  const floorBody = new CANNON.Body({ mass: 0, material: MAT_WORLD, shape: new CANNON.Plane() });
-  floorBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-  physics.addBody(floorBody);
-  grabSurfaces.push({ mesh: floorMesh, dynamic: false, box: new THREE.Box3(
-    new THREE.Vector3(-30, -1, -30), new THREE.Vector3(30, 0.02, 30)) });
-
-  const W = 30, H = 6, T = 1;   // 4 стены — grab-поверхности
-  addBox({ x: W, y: H, z: T }, { x: 0, y: H / 2, z: -W / 2 });
-  addBox({ x: W, y: H, z: T }, { x: 0, y: H / 2, z: W / 2 });
-  addBox({ x: T, y: H, z: W }, { x: -W / 2, y: H / 2, z: 0 });
-  addBox({ x: T, y: H, z: W }, { x: W / 2, y: H / 2, z: 0 });
-  // платформы и колонны
-  addBox({ x: 4, y: 0.5, z: 4 }, { x: -6, y: 2, z: -6 }, { color: 0x8a9a7a });
-  addBox({ x: 3, y: 0.5, z: 3 }, { x: 6, y: 3.2, z: -4 }, { color: 0x8a9a7a });
-  addBox({ x: 5, y: 0.5, z: 2 }, { x: 0, y: 4.4, z: -12 }, { color: 0x8a9a7a });
-  addBox({ x: 2, y: 5, z: 2 }, { x: 10, y: 2.5, z: 8 }, { color: 0x7a8a6a });
-  for (const p of [[-12, 4], [12, -10], [-10, 10]])
-    addBox({ x: 1, y: 6, z: 1 }, { x: p[0], y: 3, z: p[1] }, { color: 0x9a8a6a });
-}
-
-const _tmpV = new THREE.Vector3();
-function findGrabPoint(handPos, reachMul = 1) {
-  const R = GRAB_RADIUS * reachMul;
-  let best = null, bestD = R;
-  for (const e of grabSurfaces) {
-    e.box.clampPoint(handPos, _tmpV);
-    const d = _tmpV.distanceTo(handPos);
-    if (d < bestD) { bestD = d; best = { point: _tmpV.clone(), entry: e }; }
-  }
-  for (const e of dynamicProps) {
-    e.box.setFromObject(e.mesh);
-    e.box.clampPoint(handPos, _tmpV);
-    const d = _tmpV.distanceTo(handPos);
-    if (d < bestD) { bestD = d; best = { point: _tmpV.clone(), entry: e }; }
-  }
-  return best;
-}
-
-/* ===== СЕКЦИЯ: ДЕКАЛИ / ГИБСЫ / ВМЯТИНЫ / ЖГУТ ===== */
-const DECAL_MAX = 40;
-const decalGeo = new THREE.PlaneGeometry(1, 1);
-const decals = [];
-function spawnDecal(pos, normal, size = 0.5) {
-  const m = new THREE.Mesh(decalGeo, new THREE.MeshBasicMaterial({
-    map: TEX.blood[Math.random() * 4 | 0], transparent: true, depthWrite: false,
-    polygonOffset: true, polygonOffsetFactor: -2 }));
-  m.position.copy(pos).addScaledVector(normal, 0.02 + Math.random() * 0.01);
-  m.lookAt(pos.clone().add(normal));
-  m.scale.setScalar(size * (0.7 + Math.random() * 0.6));
-  m.rotateZ(Math.random() * 7);
-  scene.add(m); decals.push(m);
-  if (decals.length > DECAL_MAX) {
-    const old = decals.shift(); scene.remove(old); old.material.dispose();
-  }
-}
-
-const GIB_MAX = 250;
-const gibMesh = new THREE.InstancedMesh(new THREE.TetrahedronGeometry(0.07),
-  new THREE.MeshStandardMaterial({ color: 0x8a1010, roughness: 0.7 }), GIB_MAX);
-gibMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-gibMesh.frustumCulled = false;
-scene.add(gibMesh);
-const gibs = Array.from({ length: GIB_MAX }, () =>
-  ({ p: new THREE.Vector3(0, -100, 0), v: new THREE.Vector3(), life: 0, r: Math.random() * 7 }));
-let gibCursor = 0;
-const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(),
-  _one = new THREE.Vector3(1, 1, 1);
-function spawnGibs(pos, n = 14, power = 5) {
-  Audio.gib();
-  for (let i = 0; i < n; i++) {
-    const g = gibs[gibCursor++ % GIB_MAX];
-    g.p.copy(pos).add(new THREE.Vector3((Math.random() - 0.5) * 0.3, Math.random() * 0.2, (Math.random() - 0.5) * 0.3));
-    g.v.set((Math.random() - 0.5) * power, Math.random() * power * 0.9, (Math.random() - 0.5) * power);
-    g.life = 4 + Math.random() * 3;
-  }
-  spawnDecal(new THREE.Vector3(pos.x, 0.03, pos.z), new THREE.Vector3(0, 1, 0), 0.8 + Math.random() * 0.7);
-}
-function updateGibs(dt) {
-  for (let i = 0; i < GIB_MAX; i++) {
-    const g = gibs[i];
-    if (g.life > 0) {
-      g.life -= dt; g.v.y -= 9.8 * dt;
-      g.p.addScaledVector(g.v, dt);
-      if (g.p.y < 0.05) { g.p.y = 0.05; g.v.y *= -0.3; g.v.x *= 0.7; g.v.z *= 0.7; }
-      if (g.life <= 0) g.p.set(0, -100, 0);
-    }
-    _e.set(g.r + g.life, g.r * 2, g.life);
-    _q.setFromEuler(_e);
-    _m4.compose(g.p, _q, _one);
-    gibMesh.setMatrixAt(i, _m4);
-  }
-  gibMesh.instanceMatrix.needsUpdate = true;
-}
-
-// вмятина: накладываемый меш в локальной точке части тела
-function spawnDent(parentMesh, localPos, size = 0.09) {
-  const d = new THREE.Mesh(new THREE.SphereGeometry(size, 10, 8),
-    new THREE.MeshStandardMaterial({ color: 0x1a0808, roughness: 1 }));
-  d.scale.set(1, 0.35, 1);
-  d.position.copy(localPos);
-  parentMesh.add(d);
-}
-
-// «жгут» между конечностью и телом при растяжении
-function makeTube() {
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1, 8, 1, true),
-    new THREE.MeshStandardMaterial({ color: 0x7a1414, roughness: 0.8, side: THREE.DoubleSide }));
-  m.visible = false; scene.add(m); return m;
-}
-const UP = new THREE.Vector3(0, 1, 0);
-function updateTube(mesh, a, b) {
-  mesh.visible = true;
-  const dir = b.clone().sub(a); const len = Math.max(dir.length(), 0.01);
-  mesh.position.copy(a).addScaledVector(dir, 0.5);
-  mesh.scale.set(1, len, 1);
-  mesh.quaternion.setFromUnitVectors(UP, dir.normalize());
-}
-
-/* ===== СЕКЦИЯ: CHARACTER RIG (скелет NPC из cannon-тел) =====
-   Части: head, chest, waist, pelvis, uArmL/R, fArmL/R, thighL/R, shinL/R.
-   Торс = chest + waist: разрыв сустава waist-chest = разрыв на 2 части. */
-let rigId = 0;
-class CharacterRig {
-  constructor({ isMonster = false, spawn = new THREE.Vector3(0, 1.6, 0), name = 'npc' } = {}) {
-    this.id = ++rigId;
-    this.isMonster = isMonster;
-    this.scale = isMonster ? 1.6 : 1.0;      // монстр крупнее (~1.6x)
-    this.name = name;
-    this.state = 'ANIMATED';                 // ANIMATED | BLENDED | RAGDOLL
-    this.dead = false;
-    this.gibbed = false;
-    this.hits = 0;
-    this.reviveTimer = 0;
-    this.torn = new Set();
-    this.heldPart = null; this.heldBy = null;
-    this.bodies = {}; this.meshes = {}; this.joints = []; this.debugMeshes = [];
-    this.tube = makeTube();
-    this.aiTimer = Math.random() * 5;
-    this.aiDir = new THREE.Vector3(1, 0, 0);
-    this.spawn = spawn.clone();        // сохраняем точку спавна для build()
-    this.build();
-    rigs.push(this);
-  }
-
-  build() {
-    const s = this.scale;
-    const spawn = this.spawn;          // доступ к точке спавна внутри build()
-    const skinTex = this.isMonster ? TEX.monsterSkin : TEX.skin;
-    const tint = this.isMonster ? 0xff7a5a : 0xffffff;
-    const d = this.isMonster
-      ? { head: 0.17, chest: 0.30, waist: 0.26, pelvis: 0.24,
-          uArm: 0.10, fArm: 0.085, thigh: 0.13, shin: 0.10 }
-      : { head: 0.14, chest: 0.20, waist: 0.17, pelvis: 0.16,
-          uArm: 0.065, fArm: 0.055, thigh: 0.085, shin: 0.07 };
-    this.dims = d;
-    const mkMat = () => new THREE.MeshStandardMaterial({ map: skinTex, color: tint, roughness: 0.9 });
-    // УПРОЩЕНИЕ: части — сферы (cannon-es не имеет капсул), визуально тоже сферы
-    const mk = (name, r, pos) => {
-      const b = new CANNON.Body({ mass: 8, material: MAT_WORLD,
-        shape: new CANNON.Sphere(r * s), linearDamping: 0.3, angularDamping: 0.7 });
-      b.position.set(pos.x, pos.y, pos.z);
-      b.userData = { rig: this, part: name };
-      physics.addBody(b); this.bodies[name] = b;
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(r * s, 14, 10), mkMat());
-      mesh.castShadow = true; scene.add(mesh); this.meshes[name] = mesh;
-      const dbg = new THREE.Mesh(new THREE.SphereGeometry(r * s * 1.05, 8, 6),
-        new THREE.MeshBasicMaterial({ color: 0x00ff88, wireframe: true }));
-      dbg.visible = false; scene.add(dbg); this.debugMeshes.push(dbg);
-      return b;
-    };
-    const P = (x, y, z) => new THREE.Vector3(spawn.x + x * s, spawn.y + y * s, spawn.z + z * s);
-    mk('pelvis', d.pelvis, P(0, 1.00, 0));
-    mk('waist',  d.waist,  P(0, 1.30, 0));
-    mk('chest',  d.chest,  P(0, 1.66, 0));
-    mk('head',   d.head,   P(0, 2.06, 0));
-    mk('uArmL',  d.uArm,   P(-0.30, 1.66, 0));
-    mk('fArmL',  d.fArm,   P(-0.30, 1.30, 0));
-    mk('uArmR',  d.uArm,   P(0.30, 1.66, 0));
-    mk('fArmR',  d.fArm,   P(0.30, 1.30, 0));
-    mk('thighL', d.thigh,  P(-0.14, 0.62, 0));
-    mk('shinL',  d.shin,   P(-0.14, 0.24, 0));
-    mk('thighR', d.thigh,  P(0.14, 0.62, 0));
-    mk('shinR',  d.shin,   P(0.14, 0.24, 0));
-    this.poseOffsets = {
-      pelvis: [0, 1.00, 0], waist: [0, 1.30, 0], chest: [0, 1.66, 0], head: [0, 2.06, 0],
-      uArmL: [-0.30, 1.66, 0], fArmL: [-0.30, 1.30, 0], uArmR: [0.30, 1.66, 0], fArmR: [0.30, 1.30, 0],
-      thighL: [-0.14, 0.62, 0], shinL: [-0.14, 0.24, 0], thighR: [0.14, 0.62, 0], shinR: [0.14, 0.24, 0],
-    };
-
-    // лицо: глаза, рот, нос — отдельные меши
-    const head = this.meshes.head;
-    const pupM = new THREE.MeshStandardMaterial({ color: 0x101010 });
-    for (const sx of [-1, 1]) {
-      const e = new THREE.Mesh(new THREE.SphereGeometry(0.038 * s, 8, 8),
-        new THREE.MeshStandardMaterial({ color: 0xffffff }));
-      e.position.set(0.075 * s * sx, 0.04 * s, 0.10 * s); head.add(e);
-      const p = new THREE.Mesh(new THREE.SphereGeometry(0.017 * s, 6, 6), pupM);
-      p.position.set(0.075 * s * sx, 0.04 * s, 0.125 * s); head.add(p);
-    }
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.05 * s, 0.04 * s, 0.05 * s),
-      new THREE.MeshStandardMaterial({ color: this.isMonster ? 0x5a1a12 : 0x6a4a3a }));
-    nose.position.set(0, -0.02 * s, 0.13 * s); head.add(nose);
-    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.11 * s, 0.035 * s, 0.02 * s),
-      new THREE.MeshStandardMaterial({ color: this.isMonster ? 0xcc8877 : 0x4a2018 }));
-    mouth.position.set(0, -0.10 * s, 0.12 * s); head.add(mouth);
-    if (this.isMonster) {                          // пасть и рога
-      for (let i = 0; i < 6; i++) {
-        const t = new THREE.Mesh(new THREE.ConeGeometry(0.014 * s, 0.05 * s, 5),
-          new THREE.MeshStandardMaterial({ color: 0xf0e8d0 }));
-        t.position.set(-0.05 * s + i * 0.02 * s, -0.078 * s, 0.125 * s);
-        t.rotation.x = Math.PI; head.add(t);
-        const t2 = t.clone(); t2.position.y = -0.125 * s; t2.rotation.x = 0; head.add(t2);
-      }
-      for (const sx of [-1, 1]) {
-        const horn = new THREE.Mesh(new THREE.ConeGeometry(0.045 * s, 0.16 * s, 6),
-          new THREE.MeshStandardMaterial({ color: 0xd8cfc0 }));
-        horn.position.set(0.09 * s * sx, 0.15 * s, 0); horn.rotation.z = -0.5 * sx; head.add(horn);
-      }
-    }
-
-    // аксессуары
-    const accMat = new THREE.MeshStandardMaterial({ color: 0x86428a, roughness: 0.8 });
-    const hat = new THREE.Group();
-    hat.add(new THREE.Mesh(new THREE.CylinderGeometry(0.20 * s, 0.20 * s, 0.02 * s, 16), accMat));
-    const topH = new THREE.Mesh(new THREE.CylinderGeometry(0.12 * s, 0.13 * s, 0.16 * s, 16), accMat);
-    topH.position.y = 0.09 * s; hat.add(topH);
-    hat.position.y = 0.16 * s; hat.visible = false; head.add(hat);
-    const glasses = new THREE.Group();
-    for (const sx of [-1, 1]) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.05 * s, 0.009 * s, 8, 16),
-        new THREE.MeshStandardMaterial({ color: 0x222222 }));
-      ring.position.set(0.075 * s * sx, 0.04 * s, 0.125 * s); glasses.add(ring);
-    }
-    glasses.visible = false; head.add(glasses);
-    const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.12 * s, 0.04 * s, 8, 16),
-      new THREE.MeshStandardMaterial({ color: 0xcc3344, map: TEX.cloth }));
-    scarf.rotation.x = Math.PI / 2; scarf.visible = false; this.meshes.chest.add(scarf);
-    this.acc = { hat, glasses, scarf };
-    this.applyAccessories();
-    this.applyTint(S.tintMode);
-
-    this.buildJoints();
-
-    // удар о стену в RAGDOLL на большой скорости → гибель от броска (по ТЗ п.4)
-    for (const part of ['head', 'chest', 'waist', 'pelvis']) {
-      this.bodies[part].addEventListener('collide', (e) => {
-        if (this.state !== 'RAGDOLL' || this.dead || this.gibbed) return;
-        const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
-        if (v > IMPACT_KILL) {
-          const p = this.bodies[part].position;
-          spawnGibs(new THREE.Vector3(p.x, p.y, p.z), 22, 7);
-          this.gib();
-        }
-      });
-    }
-  }
-
-  buildJoints() {
-    const s = this.scale;
-    const cone = (bA, bB, pivotA, pivotB, maxAngle = Math.PI / 4) => {
-      const j = new CANNON.ConeTwistConstraint(bA, bB, {
-        pivotA: new CANNON.Vec3(pivotA.x * s, pivotA.y * s, pivotA.z * s),
-        pivotB: new CANNON.Vec3(pivotB.x * s, pivotB.y * s, pivotB.z * s),
-        axisA: CANNON.Vec3.UNIT_Y, axisB: CANNON.Vec3.UNIT_Y,
-        angle: maxAngle, twistAngle: maxAngle / 2, maxForce: 1e5,
-      });
-      physics.addConstraint(j);
-      this.joints.push({ c: j, a: bA.userData.part, b: bB.userData.part,
-        base: Math.max(pivotA.x, pivotA.y, pivotA.z) * s * 1.02 });
-    };
-    const B = this.bodies;
-    cone(B.pelvis, B.waist, { x: 0, y: 0.12, z: 0 }, { x: 0, y: -0.12, z: 0 }, Math.PI / 5);
-    cone(B.waist,  B.chest, { x: 0, y: 0.14, z: 0 }, { x: 0, y: -0.14, z: 0 }, Math.PI / 5);
-    cone(B.chest,  B.head,  { x: 0, y: 0.22, z: 0 }, { x: 0, y: -0.16, z: 0 }, Math.PI / 5);
-    cone(B.chest, B.uArmL, { x: -0.20, y: 0.10, z: 0 }, { x: 0, y: 0.20, z: 0 }, Math.PI / 2.2);
-    cone(B.uArmL, B.fArmL, { x: 0, y: -0.20, z: 0 }, { x: 0, y: 0.20, z: 0 }, Math.PI / 2.4);
-    cone(B.chest, B.uArmR, { x: 0.20, y: 0.10, z: 0 }, { x: 0, y: 0.20, z: 0 }, Math.PI / 2.2);
-    cone(B.uArmR, B.fArmR, { x: 0, y: -0.20, z: 0 }, { x: 0, y: 0.20, z: 0 }, Math.PI / 2.4);
-    cone(B.pelvis, B.thighL, { x: -0.10, y: -0.10, z: 0 }, { x: 0, y: 0.22, z: 0 }, Math.PI / 3);
-    cone(B.thighL, B.shinL, { x: 0, y: -0.22, z: 0 }, { x: 0, y: 0.22, z: 0 }, Math.PI / 2.6);
-    cone(B.pelvis, B.thighR, { x: 0.10, y: -0.10, z: 0 }, { x: 0, y: 0.22, z: 0 }, Math.PI / 3);
-    cone(B.thighR, B.shinR, { x: 0, y: -0.22, z: 0 }, { x: 0, y: 0.22, z: 0 }, Math.PI / 2.6);
-  }
-
-  static TEAR_MAP = {
-    head:   { parent: 'chest' },
-    uArmL:  { parent: 'chest' },
-    uArmR:  { parent: 'chest' },
-    thighL: { parent: 'pelvis' },
-    thighR: { parent: 'pelvis' },
-  };
-  static FATAL = new Set(['head', 'chest']);
-  static CHILDREN = { uArmL: 'fArmL', uArmR: 'fArmR', thighL: 'shinL', thighR: 'shinR' };
-
-  syncMeshes() {
-    for (const p in this.meshes) {
-      const b = this.bodies[p];
-      if (!b) continue;
-      this.meshes[p].position.set(b.position.x, b.position.y, b.position.z);
-      this.meshes[p].quaternion.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
-    }
-    for (const dbg of this.debugMeshes) dbg.position.copy(this.meshes[this.partsList ? 0 : 0].position); // не используется напрямую
-  }
-
-  updateAI(dt, t) {
-    if (this.dead || this.heldPart) return;
-    this.aiTimer -= dt;
-    if (this.aiTimer <= 0) {
-      this.aiTimer = 2 + Math.random() * 4;
-      const a = Math.random() * Math.PI * 2;
-      this.aiDir.set(Math.cos(a), 0, Math.sin(a));
-    }
-    const root = this.bodies.pelvis;
-    // граница арены
-    root.position.x = THREE.MathUtils.clamp(root.position.x + this.aiDir.x * 1.2 * dt, -28, 28);
-    root.position.z = THREE.MathUtils.clamp(root.position.z + this.aiDir.z * 1.2 * dt, -28, 28);
-    root.quaternion.setFromEuler(0, Math.atan2(this.aiDir.x, this.aiDir.z), 0);
-    this.poseWalk(t);
-  }
-
-  poseWalk(t) {
-    // ANIMATED: процедурная поза вокруг корня (кинематически)
-    const P = this.bodies, s = this.scale, sw = Math.sin(t * 6) * 0.18;
-    const place = (name, rx = 0) => {
-      if (this.torn.has(name) || !P[name] || !P.pelvis) return;
-      const off = this.poseOffsets[name];
-      const root = P.pelvis.position;
-      P[name].position.set(root.x + off[0] * s, root.y + off[1] * s, root.z + off[2] * s);
-      P[name].quaternion.setFromEuler(rx, 0, 0);
-    };
-    for (const n in P) {
-      P[n].velocity.set(0, 0, 0);
-      P[n].angularVelocity.set(0, 0, 0);
-      P[n].type = CANNON.Body.KINEMATIC;
-    }
-    for (const n in this.poseOffsets) place(n);
-  }
-
-  teleportPose(spawn) {
-    this.dead = false; this.hits = 0;
-    const s = this.scale;
-    for (const n in this.poseOffsets) {
-      if (this.torn.has(n) || !this.bodies[n]) continue;
-      const b = this.bodies[n];
-      b.position.set(spawn.x + this.poseOffsets[n][0] * s,
-        spawn.y + this.poseOffsets[n][1] * s, spawn.z + this.poseOffsets[n][2] * s);
-      b.velocity.set(0, 0, 0); b.angularVelocity.set(0, 0, 0);
-      b.quaternion.set(0, 0, 0, 1);
-      b.type = CANNON.Body.KINEMATIC;
-    }
-  }
-
-  goPhysical() {
-    for (const n in this.bodies) {
-      if (!this.torn.has(n)) this.bodies[n].type = CANNON.Body.DYNAMIC;
-    }
-  }
-
-  update(dt, t) {
-    if (this.gibbed) return;
-    if (this.state === 'RAGDOLL') {
-      if (!this.dead) {
-        this.reviveTimer -= dt;
-        if (this.reviveTimer <= 0) {
-          const r = this.bodies.pelvis.position;
-          this.teleportPose(new THREE.Vector3(r.x, Math.max(0.5, r.y), r.z));
-        }
-      }
-      this.checkStretch();
-    } else if (!this.heldPart) {
-      this.updateAI(dt, t);
-    }
-    this.syncMeshes();
-  }
-
-  receivePunch(worldPos, dir) {
-    if (this.dead || this.gibbed) return;
-    const b = this.bodies.chest;
-    b.velocity.set(dir.x * 5, 2.5, dir.z * 5);
-    this.goPhysical();
-    this.state = 'RAGDOLL';
-    this.reviveTimer = REVIVE_TIME;
-    this.hits++;
-    spawnDent(this.meshes.chest,
-      this.meshes.chest.worldToLocal(worldPos.clone()).multiplyScalar(1 / this.scale),
-      0.08 * this.scale);
-    const p = b.position;
-    spawnDecal(new THREE.Vector3(p.x, 0.03, p.z), new THREE.Vector3(0, 1, 0), 0.4);
-    Audio.punch();
-    if (this.hits >= 3) this.die();
-  }
-
-  die() {
-    if (this.dead || this.gibbed) return;
-    this.dead = true;
-    this.state = 'RAGDOLL';
-    this.goPhysical();
-    Audio.die();
-    const r = this.bodies.chest.position;
-    spawnGibs(new THREE.Vector3(r.x, r.y, r.z), 10, 3);
-    spawnDecal(new THREE.Vector3(r.x, 0.03, r.z), new THREE.Vector3(0, 1, 0), 0.9);
-  }
-
-  gib(pos) {
-    if (this.gibbed) return;
-    this.gibbed = true; this.dead = true; this.state = 'RAGDOLL';
-    const r = pos || this.bodies.chest.position;
-    spawnGibs(new THREE.Vector3(r.x, r.y, r.z), 30, 8);
-    for (const n in this.meshes) this.meshes[n].visible = false;
-    for (const j of this.joints) { try { physics.removeConstraint(j.c); } catch (e) {} }
-    for (const n in this.bodies) { try { physics.removeBody(this.bodies[n]); } catch (e) {} }
-    for (const dbg of this.debugMeshes) { scene.remove(dbg); }
-    this.debugMeshes.length = 0;
-    this.tube.visible = false;
-  }
-
-  tearPart(part) {
-    if (this.torn.has(part) || this.gibbed || !CharacterRig.TEAR_MAP[part]) return;
-    const chain = [part];
-    if (CharacterRig.CHILDREN[part]) chain.push(CharacterRig.CHILDREN[part]);
-    for (let i = this.joints.length - 1; i >= 0; i--) {
-      const j = this.joints[i];
-      if (chain.includes(j.a) || chain.includes(j.b)) {
-        try { physics.removeConstraint(j.c); } catch (e) {}
-        this.joints.splice(i, 1);
-      }
-    }
-    for (const c of chain) {
-      this.torn.add(c);
-      if (this.bodies[c]) this.bodies[c].type = CANNON.Body.DYNAMIC;
-    }
-    const anchor = this.bodies[CharacterRig.TEAR_MAP[part].parent].position;
-    const ap = new THREE.Vector3(anchor.x, anchor.y, anchor.z);
-    Audio.tear();
-    spawnGibs(ap, 12, 4);
-    const b = this.bodies[part];
-    const dir = new CANNON.Vec3(b.position.x - anchor.x, 0.5, b.position.z - anchor.z);
-    dir.normalize();
-    b.velocity.set(dir.x * 4, 3, dir.z * 4);
-    if (CharacterRig.FATAL.has(part)) this.die();
-    else if (this.state !== 'RAGDOLL') { this.state = 'RAGDOLL'; this.reviveTimer = REVIVE_TIME; }
-  }
-
-  splitInHalf() {
-    if (this.gibbed || this.torn.has('chest')) return;
-    for (let i = this.joints.length - 1; i >= 0; i--) {
-      const j = this.joints[i];
-      if ((j.a === 'waist' && j.b === 'chest') || (j.a === 'chest' && j.b === 'waist')) {
-        try { physics.removeConstraint(j.c); } catch (e) {}
-        this.joints.splice(i, 1);
-      }
-    }
-    this.torn.add('chest');
-    this.goPhysical();
-    this.state = 'RAGDOLL'; this.dead = true;
-    Audio.tear();
-    const r = this.bodies.waist.position;
-    spawnGibs(new THREE.Vector3(r.x, r.y, r.z), 18, 6);
-    spawnDecal(new THREE.Vector3(r.x, 0.03, r.z), new THREE.Vector3(0, 1, 0), 1.1);
-  }
-
-  checkStretch() {
-    if (this.gibbed) return;
-    let maxStretch = 0, maxJoint = null, tubeA = null, tubeB = null;
-    for (const j of this.joints) {
-      const pa = this.bodies[j.a].position, pb = this.bodies[j.b].position;
-      const d = pa.distanceTo(pb);
-      if (d > j.base * STRETCH_MULT && d > maxStretch) {
-        maxStretch = d; maxJoint = j;
-        tubeA = new THREE.Vector3(pa.x, pa.y, pa.z);
-        tubeB = new THREE.Vector3(pb.x, pb.y, pb.z);
-      }
-    }
-    if (maxJoint) {
-      updateTube(this.tube, tubeA, tubeB);
-      if (maxStretch > maxJoint.base * STRETCH_MULT * 1.25) {
-        const part = CharacterRig.TEAR_MAP[maxJoint.b] ? maxJoint.b
-          : (CharacterRig.TEAR_MAP[maxJoint.a] ? maxJoint.a : null);
-        if (part) this.tearPart(part);
-        this.tube.visible = false;
-      }
-    } else {
-      this.tube.visible = false;
-    }
-  }
-
-  applyAccessories() {
-    if (!this.acc) return;
-    this.acc.hat.visible = S.accessories.hat;
-    this.acc.glasses.visible = S.accessories.glasses;
-    this.acc.scarf.visible = S.accessories.scarf;
-  }
-
-  applyTint(mode) {
-    const skinTex = this.isMonster ? TEX.monsterSkin : TEX.skin;
-    const tints = {
-      normal: this.isMonster ? 0xff7a5a : 0xffffff,
-      gray: 0x888888, red: 0xff5544, blue: 0x5566ff, invert: 0x77ffff,
-    };
-    const c = tints[mode] || tints.normal;
-    for (const n in this.meshes) {
-      const m = this.meshes[n];
-      if (m.material.map === skinTex || m.material.map === TEX.cloth) m.material.color.setHex(c);
-    }
-  }
-
-  dispose() {
-    this.gibbed = true;
-    for (const j of this.joints) { try { physics.removeConstraint(j.c); } catch (e) {} }
-    for (const n in this.bodies) {
-      try { physics.removeBody(this.bodies[n]); } catch (e) {}
-      scene.remove(this.meshes[n]);
-    }
-    for (const dbg of this.debugMeshes) scene.remove(dbg);
-    scene.remove(this.tube);
-    const i = rigs.indexOf(this); if (i >= 0) rigs.splice(i, 1);
-  }
-}
-
-/* ===== СЕКЦИЯ: ЛОКАЛЬНЫЙ ИГРОК + РУКИ ===== */
-class LocalPlayer {
-  constructor() {
-    this.body = new CANNON.Body({
-      mass: 70, material: MAT_WORLD, shape: new CANNON.Sphere(0.35),
-      linearDamping: 0.05, angularDamping: 1.0,
-    });
-    this.body.fixedRotation = true;
-    this.body.updateMassProperties();
-    this.body.position.set(0, 1, 3);
-    physics.addBody(this.body);
-    this.grounded = false;
-    this.hands = [new Hand(this, 'L'), new Hand(this, 'R')];
-    this.rig = new LocalBodyView(this);
-  }
-  get isMonster() { return S.role === 'monster'; }
-  k(name) { return this.isMonster ? (MONSTER_K[name] || 1) : 1; }
-  snapTurn(a) { applySnapTurn(a); }
-  update(dt) {
-    this.grounded = this.body.velocity.y < 0.5 && this.body.position.y < 0.45;
-    const stick = Input.moveAxis;
-    const freeHands = this.hands.every(h => !h.grabbed);
-    if (freeHands && (Math.abs(stick.x) > 0.1 || Math.abs(stick.y) > 0.1)) {
-      const yaw = getCameraYaw();
-      const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-      const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
-      const spd = WALK_SPEED * this.k('control');
-      const v = new THREE.Vector3().addScaledVector(fwd, -stick.y).addScaledVector(right, stick.x);
-      if (v.lengthSq() > 1) v.normalize();
-      this.body.velocity.x += (v.x * spd - this.body.velocity.x) * Math.min(1, dt * 8);
-      this.body.velocity.z += (v.z * spd - this.body.velocity.z) * Math.min(1, dt * 8);
-    }
-    const v = this.body.velocity;
-    const sp = Math.hypot(v.x, v.y, v.z);
-    if (sp > MAX_SPEED) v.scale(MAX_SPEED / sp, v);
-    for (const h of this.hands) h.update(dt);
-    this.rig.update();
-  }
-}
-
-class Hand {
-  constructor(owner, side) {
-    this.owner = owner; this.side = side;
-    this.grabbed = null;
-    this.group = new THREE.Group();
-    scene.add(this.group);
-    this.buildFist();
-    this.lastPos = new THREE.Vector3(); this.vel = new THREE.Vector3();
-    this.punchCooldown = 0;
-    this.fingerState = { index: 0, middle: 0, thumb: 0 };
-    this.fingerCur = { index: 0, middle: 0, thumb: 0 };
-  }
-
-  buildFist() {
-    const isM = this.owner.isMonster;
-    const skin = isM ? TEX.monsterSkin : TEX.skin;
-    const tint = isM ? 0xff7a5a : 0xffffff;
-    const mat = new THREE.MeshStandardMaterial({ map: skin, color: tint, roughness: 0.9 });
-    this.handMat = mat;
-    const sc = isM ? 1.5 : 1;
-    this.palm = new THREE.Mesh(new THREE.BoxGeometry(0.08 * sc, 0.03 * sc, 0.10 * sc), mat);
-    this.group.add(this.palm);
-    this.fingers = [];
-    const defs = [
-      { name: 'thumb',  base: [-0.045 * sc, 0.005, 0.02 * sc], len: 0.035, rot: [0, 0, 0.9] },
-      { name: 'index',  base: [0.030 * sc, 0, 0.055 * sc],     len: 0.04,  rot: [0, 0, 0] },
-      { name: 'middle', base: [0.010 * sc, 0, 0.058 * sc],     len: 0.042, rot: [0, 0, 0] },
-    ];
-    for (const f of defs) {
-      const root = new THREE.Group();
-      root.position.set(...f.base);
-      root.rotation.set(...f.rot);
-      this.palm.add(root);
-      const segs = [];
-      let parent = root;
-      for (let i = 0; i < 2; i++) {          // 2 фаланги на палец
-        const pivot = new THREE.Group();
-        pivot.position.y = i === 0 ? 0 : f.len * sc;
-        const seg = new THREE.Mesh(new THREE.CapsuleGeometry(0.011 * sc, f.len * sc, 4, 8), mat);
-        seg.position.y = f.len * sc / 2;
-        pivot.add(seg);
-        parent.add(pivot);
-        parent = pivot;
-        segs.push(pivot);
-      }
-      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.011 * sc, 6, 6), mat);
-      tip.position.y = f.len * sc; parent.add(tip);
-      this.fingers.push({ ...f, root, segs });
-    }
-  }
-
-  // угол сгиба: триггер→указательный, grip→средний, A/B(X/Y)/стик-клик→большой, все→кулак
-  readFingerTargets() {
-    const b = Input.button(this.side);
-    const all = b.trigger && b.grip && b.primary;
-    this.fingerState = {
-      index: all || b.trigger ? 1 : 0,
-      middle: all || b.grip ? 1 : 0,
-      thumb: all || b.primary ? 1 : 0,
-    };
-    if (Input.pcFist) for (const f in this.fingerState) this.fingerState[f] = 1;
-  }
-
-  updateFingers(dt) {
-    this.readFingerTargets();
-    const curl = { index: -1.6, middle: -1.6, thumb: -1.2 };
-    for (const f of this.fingers) {
-      const tgt = this.fingerState[f.name] || 0;
-      this.fingerCur[f.name] += (tgt - this.fingerCur[f.name]) * Math.min(1, dt * 14);
-      const cur = this.fingerCur[f.name];
-      f.segs.forEach((seg, i) => { seg.rotation.x = cur * curl[f.name] * (i === 0 ? 0.6 : 1); });
-    }
-  }
-
-  update(dt) {
-    const wp = Input.handWorld(this.side);
-    this.group.position.copy(wp);
-    this.group.quaternion.copy(Input.handQuat(this.side));
-    if (dt > 0) {
-      this.vel.copy(wp).sub(this.lastPos).divideScalar(dt);
-      this.lastPos.copy(wp);
-    }
-    this.updateFingers(dt);
-    this.punchCooldown = Math.max(0, this.punchCooldown - dt);
-
-    const gripPressed = Input.button(this.side).grip || Input.pcGripDown[this.side];
-
-    // хват (горилла-локомоция)
-    if (gripPressed && !this.grabbed) {
-      const gp = findGrabPoint(wp, this.owner.k('reach'));
-      if (gp) { this.grabbed = gp; Audio.grab(); }
-    }
-    if (this.grabbed) {
-      const far = this.grabbed.point.distanceTo(wp) > GRAB_RADIUS * 2.5;
-      if (!gripPressed || far) {
-        if (!far) {
-          const dir = new THREE.Vector3().subVectors(wp, this.grabbed.point);
-          const force = Math.min(dir.length() * GRAB_K * 0.06, 6) * this.owner.k('push');
-          dir.normalize();
-          const v = this.owner.body.velocity;
-          v.x += dir.x * force + this.vel.x * RELEASE_BOOST * 0.5;
-          v.y += Math.max(dir.y, 0.1) * force + this.vel.y * RELEASE_BOOST * 0.5;
-          v.z += dir.z * force + this.vel.z * RELEASE_BOOST * 0.5;
-          Audio.release(this.vel.length());
-        }
-        this.grabbed = null;
-      } else {
-        // плавное притягивание тела к точке хвата (не телепорт)
-        const b = this.owner.body;
-        const dir = new CANNON.Vec3(
-          this.grabbed.point.x - b.position.x,
-          this.grabbed.point.y - b.position.y + 0.35,
-          this.grabbed.point.z - b.position.z);
-        const dist = dir.length();
-        dir.normalize();
-        const pull = Math.min(dist * GRAB_K, 40);
-        b.velocity.x += dir.x * pull * dt;
-        b.velocity.y += dir.y * pull * dt;
-        b.velocity.z += dir.z * pull * dt;
-        if (b.velocity.y < -2) b.velocity.y = -2;
-      }
-    }
-
-    // удар кулаком: все 3 пальца сжаты + резкое движение
-    const isFist = this.fingerState.index && this.fingerState.middle && this.fingerState.thumb;
-    if (isFist && this.punchCooldown <= 0 && this.vel.length() > PUNCH_SPEED) {
-      this.tryPunch(wp, this.vel);
-    }
-  }
-
-  tryPunch(wp, vel) {
-    const dir = vel.clone().normalize();
-    for (const rig of rigs) {
-      if (rig.gibbed || rig.dead) continue;
-      for (const pn in rig.bodies) {
-        const bp = rig.bodies[pn].position;
-        if (Math.hypot(wp.x - bp.x, wp.y - bp.y, wp.z - bp.z) < 0.4 * rig.scale) {
-          rig.receivePunch(wp, dir);
-          this.punchCooldown = 0.5;
-          this.owner.body.velocity.x -= dir.x * 2;
-          this.owner.body.velocity.y += 1;
-          this.owner.body.velocity.z -= dir.z * 2;
-          return;
-        }
-      }
-    }
-  }
-}
-
-/* вид своего тела (торс + голова за камерой, видны в зеркале) */
-class LocalBodyView {
-  constructor(owner) {
-    this.owner = owner;
-    this.mat = new THREE.MeshStandardMaterial({ map: TEX.skin, roughness: 0.9 });
-    this.torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.20, 0.4, 6, 12), this.mat);
-    this.torso.castShadow = true;
-    scene.add(this.torso);
-    this.head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 12),
-      new THREE.MeshStandardMaterial({ map: TEX.skin, roughness: 0.9 }));
-    scene.add(this.head);
-    const pupM = new THREE.MeshStandardMaterial({ color: 0x101010 });
-    for (const sx of [-1, 1]) {
-      const e = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8),
-        new THREE.MeshStandardMaterial({ color: 0xffffff }));
-      e.position.set(0.07 * sx, 0.03, 0.11); this.head.add(e);
-      const p = new THREE.Mesh(new THREE.SphereGeometry(0.016, 6, 6), pupM);
-      p.position.set(0.07 * sx, 0.03, 0.135); this.head.add(p);
-    }
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.05),
-      new THREE.MeshStandardMaterial({ color: 0x6a4a3a }));
-    nose.position.set(0, -0.02, 0.13); this.head.add(nose);
-    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.035, 0.02),
-      new THREE.MeshStandardMaterial({ color: 0x4a2018 }));
-    mouth.position.set(0, -0.10, 0.12); this.head.add(mouth);
-    const accMat = new THREE.MeshStandardMaterial({ color: 0x86428a });
-    const hat = new THREE.Group();
-    hat.add(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.02, 16), accMat));
-    const topH = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.13, 0.16, 16), accMat);
-    topH.position.y = 0.09; hat.add(topH);
-    hat.position.y = 0.16; hat.visible = false; this.head.add(hat);
-    const glasses = new THREE.Group();
-    for (const sx of [-1, 1]) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.009, 8, 16),
-        new THREE.MeshStandardMaterial({ color: 0x222222 }));
-      ring.position.set(0.07 * sx, 0.03, 0.13); glasses.add(ring);
-    }
-    glasses.visible = false; this.head.add(glasses);
-    const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.04, 8, 16),
-      new THREE.MeshStandardMaterial({ color: 0xcc3344, map: TEX.cloth }));
-    scarf.rotation.x = Math.PI / 2; scarf.visible = false; this.torso.add(scarf);
-    this.acc = { hat, glasses, scarf };
-    this.teeth = null;
-    this.applyAccessories();
-    this.applyTint(S.tintMode);
-    this.lastMonster = false;
-  }
-
-  update() {
-    const b = this.owner.body;
-    const camWorld = new THREE.Vector3(); camera.getWorldPosition(camWorld);
-    this.head.position.copy(camWorld);
-    const yaw = getCameraYaw();
-    this.head.rotation.set(0, yaw, 0);
-    this.torso.position.set(b.position.x, b.position.y + 0.35, b.position.z);
-    this.torso.rotation.y = yaw;
-    // смена формы игрок/монстр
-    const isM = this.owner.isMonster;
-    if (isM !== this.lastMonster) {
-      this.lastMonster = isM;
-      const want = isM ? 1.6 : 1;
-      this.head.scale.setScalar(want);
-      this.torso.scale.setScalar(want);
-      this.head.material = new THREE.MeshStandardMaterial({
-        map: isM ? TEX.monsterSkin : TEX.skin, roughness: 0.9 });
-      this.head.material.color.copy(this.mat.color);
-      if (isM && !this.teeth) {
-        this.teeth = new THREE.Group();
-        for (let i = 0; i < 6; i++) {
-          const t = new THREE.Mesh(new THREE.ConeGeometry(0.014, 0.05, 5),
-            new THREE.MeshStandardMaterial({ color: 0xf0e8d0 }));
-          t.position.set(-0.05 + i * 0.02, -0.08, 0.125); t.rotation.x = Math.PI; this.teeth.add(t);
-          const t2 = t.clone(); t2.position.y = -0.125; t2.rotation.x = 0; this.teeth.add(t2);
-        }
-        this.head.add(this.teeth);
-      }
-      if (this.teeth) this.teeth.visible = isM;
-    }
-  }
-  applyAccessories() {
-    this.acc.hat.visible = S.accessories.hat;
-    this.acc.glasses.visible = S.accessories.glasses;
-    this.acc.scarf.visible = S.accessories.scarf;
-  }
-  applyTint(mode) {
-    const tints = { normal: 0xffffff, gray: 0x888888, red: 0xff5544,
-      blue: 0x5566ff, invert: 0x77ffff };
-    const c = tints[mode] || tints.normal;
-    this.mat.color.setHex(c);
-    if (this.head.material) this.head.material.color.setHex(c);
-  }
-}
-
-/* ===== СЕКЦИЯ: ВВОД (XR + ПК-fallback) ===== */
-const Input = {
-  pcFist: false,
-  pcGripDown: { L: false, R: false },
-  moveAxis: new THREE.Vector2(),
-  controllers: {},
-  snapLatch: false,
-  menuLatch: {},
-  xb: null,
-
-  init() {
-    for (let i = 0; i < 2; i++) {
-      const hand = i === 0 ? 'L' : 'R';
-      const grip = renderer.xr.getControllerGrip(i);
-      const ray = renderer.xr.getController(i);
-      scene.add(grip); scene.add(ray);
-      this.controllers[hand] = { grip, ray };
-    }
-    renderer.xr.addEventListener('sessionstart', () => { S.inVR = true; });
-    renderer.xr.addEventListener('sessionend', () => { S.inVR = false; });
-    this.initXRButtons();
-    this.initPC();
-  },
-
-  initXRButtons() {
-    this.xb = {
-      L: { trigger: 0, grip: 0, primary: 0 },
-      R: { trigger: 0, grip: 0, primary: 0 },
-    };
-    for (const hand of ['L', 'R']) {
-      const c = this.controllers[hand].ray;
-      c.addEventListener('selectstart', () => this.xb[hand].trigger = 1);
-      c.addEventListener('selectend', () => this.xb[hand].trigger = 0);
-      c.addEventListener('squeezestart', () => this.xb[hand].grip = 1);
-      c.addEventListener('squeezeend', () => this.xb[hand].grip = 0);
-    }
-  },
-
-  pollXR() {
-    const session = renderer.xr.getSession();
-    if (!session) return;
-    for (const src of session.inputSources) {
-      if (!src.gamepad || !src.handedness || src.handedness === 'none') continue;
-      const h = src.handedness === 'left' ? 'L' : 'R';
-      const g = src.gamepad;
-      const btn = (i) => (g.buttons[i] && (g.buttons[i].pressed || g.buttons[i].value > 0.5)) ? 1 : 0;
-      const a = btn(4), bBtn = btn(5), stick = btn(3);
-      this.xb[h].primary = a || bBtn || stick;
-      if (g.axes.length >= 4) {
-        const ax = g.axes[2] !== undefined ? g.axes[2] : g.axes[0];
-        const ay = g.axes[3] !== undefined ? g.axes[3] : g.axes[1];
-        if (h === 'L') this.moveAxis.set(ax || 0, ay || 0);
-        if (h === 'R' && Math.abs(ax) > 0.7 && !this.snapLatch) {
-          this.snapLatch = true;
-          if (local) local.snapTurn(ax > 0 ? -Math.PI / 4 : Math.PI / 4);
-        } else if (h === 'R' && Math.abs(ax) < 0.4) this.snapLatch = false;
-      }
-    }
-  },
-
-  button(side) {
-    return this.xb ? this.xb[side] : { trigger: 0, grip: 0, primary: 0 };
-  },
-
-  handWorld(side) {
-    const c = this.controllers[side];
-    if (c && S.inVR) {
-      const v = new THREE.Vector3();
-      c.grip.getWorldPosition(v);
-      return v;
-    }
-    return this.pcHands ? this.pcHands[side].p.clone() : new THREE.Vector3();
-  },
-
-  handQuat(side) {
-    const c = this.controllers[side];
-    if (c && S.inVR) {
-      const q = new THREE.Quaternion();
-      c.grip.getWorldQuaternion(q);
-      return q;
-    }
-    return this.pcHands ? this.pcHands[side].q.clone() : new THREE.Quaternion();
-  },
-
-  initPC() {
-    this.pcMouse = { yaw: 0, pitch: 0 };
-    this.pcHands = {
-      L: { p: new THREE.Vector3(), q: new THREE.Quaternion() },
-      R: { p: new THREE.Vector3(), q: new THREE.Quaternion() },
-    };
-    this.keys = {};
-    addEventListener('keydown', (e) => {
-      this.keys[e.code] = true;
-      if (e.code === 'KeyF') this.pcFist = true;
-      if (e.code === 'Space' && local && local.grounded) {
-        local.body.velocity.y = JUMP_V * local.k('jump');
-        Audio.jump();
-      }
-      if (e.code === 'Tab') { e.preventDefault(); if (vrMenu) vrMenu.toggle(); }
-    });
-    addEventListener('keyup', (e) => {
-      this.keys[e.code] = false;
-      if (e.code === 'KeyF') this.pcFist = false;
-    });
-    renderer.domElement.addEventListener('click', () => {
-      try { Audio.ensure(); } catch (e) {}
-      if (!S.inVR) renderer.domElement.requestPointerLock();
-    });
-    addEventListener('mousemove', (e) => {
-      if (document.pointerLockElement) {
-        this.pcMouse.yaw -= e.movementX * 0.0025;
-        this.pcMouse.pitch = Math.max(-1.4, Math.min(1.4, this.pcMouse.pitch - e.movementY * 0.0025));
-      }
-    });
-    addEventListener('mousedown', (e) => {
-      if (document.pointerLockElement) {
-        if (e.button === 0) this.pcGripDown.R = true;
-        if (e.button === 2) this.pcGripDown.L = true;
-      }
-    });
-    addEventListener('mouseup', (e) => {
-      if (e.button === 0) this.pcGripDown.R = false;
-      if (e.button === 2) this.pcGripDown.L = false;
-    });
-    addEventListener('contextmenu', (e) => e.preventDefault());
-  },
-
-  updatePC(dt) {
-    if (S.inVR) return;
-    const k = this.keys;
-    this.moveAxis.set(
-      (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0),
-      (k.KeyW ? 1 : 0) - (k.KeyS ? 1 : 0));
-    camera.rotation.order = 'YXZ';
-    camera.rotation.y = this.pcMouse.yaw;
-    camera.rotation.x = this.pcMouse.pitch;
-    const b = local.body;
-    camera.position.set(b.position.x, b.position.y + 0.6, b.position.z);
-    const base = new THREE.Vector3(); camera.getWorldPosition(base);
-    const e = new THREE.Euler(this.pcMouse.pitch, this.pcMouse.yaw, 0, 'YXZ');
-    for (const side of ['L', 'R']) {
-      const sx = side === 'L' ? -1 : 1;
-      const p = new THREE.Vector3(sx * 0.25, -0.25, -0.5);
-      p.applyEuler(e).add(base);
-      this.pcHands[side].p.copy(p);
-      this.pcHands[side].q.setFromEuler(e);
-    }
-  },
-};
-
-function getCameraYaw() {
-  return new THREE.Euler().setFromQuaternion(
-    camera.getWorldQuaternion(new THREE.Quaternion()), 'YXZ').y;
-}
-
-function applySnapTurn(angle) {
-  const rig = scene.userData.rig;
-  if (S.inVR && rig) {
-    const head = new THREE.Vector3(); camera.getWorldPosition(head);
-    const off = new THREE.Vector3(rig.position.x - head.x, 0, rig.position.z - head.z);
-    const rot = new THREE.Quaternion().setFromAxisAngle(UP, angle);
-    off.applyQuaternion(rot);
-    rig.position.set(head.x + off.x, 0, head.z + off.z);
-    rig.quaternion.premultiply(rot);
-  } else {
-    Input.pcMouse.yaw += angle;
-  }
-}
-
-/* ===== СЕКЦИЯ: ЗЕРКАЛО ===== */
-function toggleMirror() {
-  S.mirror = !S.mirror;
-  const btn = document.querySelector('[data-act=mirror]');
-  if (btn) btn.textContent = 'Зеркало: ' + (S.mirror ? 'вкл' : 'выкл');
-  if (S.mirror && !mirrorMesh) {
-    mirrorMesh = new Reflector(new THREE.PlaneGeometry(3, 3.4), {
-      clipBias: 0.003, textureWidth: 512, textureHeight: 612, color: 0x889999 });
-    mirrorMesh.position.set(0, 1.7, 14.5);
-    mirrorMesh.rotation.y = Math.PI;
-    scene.add(mirrorMesh);
-  }
-  if (mirrorMesh) mirrorMesh.visible = S.mirror;
-}
-
-/* ===== СЕКЦИЯ: МОНСТР-ХВАТ NPC (Be the Monster) ===== */
-const heldTarget = { rig: null, part: null };
-
-function tryGrabNPC() {
-  if (S.role !== 'monster' || !local) return;
-  const wp = Input.handWorld('R');
-  for (const rig of rigs) {
-    if (rig.gibbed || rig.dead) continue;
-    for (const pn in rig.bodies) {
-      if (rig.torn.has(pn)) continue;
-      const bp = rig.bodies[pn].position;
-      if (Math.hypot(wp.x - bp.x, wp.y - bp.y, wp.z - bp.z) < 0.5 * rig.scale) {
-        heldTarget.rig = rig; heldTarget.part = pn;
-        rig.heldPart = pn; rig.heldBy = local;
-        rig.goPhysical(); rig.state = 'RAGDOLL';
-        Audio.grab();
-        return;
-      }
-    }
-  }
-}
-
-function releaseNPC() {
-  if (!heldTarget.rig) return;
-  const rig = heldTarget.rig;
-  rig.heldPart = null; rig.heldBy = null;
-  // бросок: скорость кисти передаётся схваченной части (стена убьёт через collide-хендлер)
-  const h = local.hands[1];
-  const b = rig.bodies[heldTarget.part];
-  if (b) b.velocity.set(h.vel.x * 1.4, h.vel.y * 1.4 + 1, h.vel.z * 1.4);
-  heldTarget.rig = null; heldTarget.part = null;
-  Audio.release(h.vel.length());
-}
-
-function updateHeld() {
-  if (!heldTarget.rig) return;
-  const rig = heldTarget.rig, part = heldTarget.part;
-  if (rig.gibbed) { heldTarget.rig = null; heldTarget.part = null; rig.tube.visible = false; return; }
-  const wp = Input.handWorld('R');
-  const b = rig.bodies[part];
-  if (!b) { heldTarget.rig = null; return; }
-  // тянем схваченную часть к кисти пружиной — суставы растягиваются, checkStretch() рвёт
-  const dx = wp.x - b.position.x, dy = wp.y - b.position.y, dz = wp.z - b.position.z;
-  const dist = Math.hypot(dx, dy, dz) || 1;
-  const pull = Math.min(dist * 18, 45);
-  b.velocity.x = dx / dist * pull;
-  b.velocity.y = dy / dist * pull;
-  b.velocity.z = dz / dist * pull;
-  const mp = new THREE.Vector3(b.position.x, b.position.y, b.position.z);
-  updateTube(rig.tube, mp, wp);
-}
-
-/* ===== СЕКЦИЯ: СПАВН ===== */
-function spawnPos() {
-  const yaw = getCameraYaw();
-  const base = new THREE.Vector3(); camera.getWorldPosition(base);
-  return new THREE.Vector3(base.x - Math.sin(yaw) * 2, Math.max(0.5, base.y - 0.5), base.z - Math.cos(yaw) * 2);
-}
-function spawnProp(kind) {
-  const p = spawnPos();
-  if (kind === 'crate') addBox({ x: 0.5, y: 0.5, z: 0.5 }, p, { mass: 8, color: 0xa8783a, tex: TEX.cloth });
-  if (kind === 'barrel') addBox({ x: 0.35, y: 0.9, z: 0.35 }, p, { mass: 12, shape: 'cyl', color: 0x4a6a4a });
-  if (kind === 'ball') addBox({ x: 0.35, y: 0.35, z: 0.35 }, p, { mass: 3, shape: 'sphere', color: 0xcc8833 });
-}
-function spawnRig(kind) {
-  if (rigs.filter(r => !r.gibbed).length >= NPC_MAX) { console.warn('Лимит NPC'); return null; }
-  const p = spawnPos();
-  const rig = new CharacterRig({ isMonster: kind === 'monster', spawn: p, name: kind });
-  return rig;
-}
-function nearestRig() {
-  const c = new THREE.Vector3(); camera.getWorldPosition(c);
-  let best = null, bd = 8;
-  for (const r of rigs) {
-    if (r.gibbed) continue;
-    const b = r.bodies.chest.position;
-    const d = Math.hypot(c.x - b.x, c.y - b.y, c.z - b.z);
-    if (d < bd) { bd = d; best = r; }
-  }
-  return best;
-}
-
-/* ===== СЕКЦИЯ: ДЕЙСТВИЯ МЕНЮ ===== */
-function setRole(role) {
-  S.role = role;
-  const rm = document.querySelector('[data-act=roleMonster]');
-  const rp = document.querySelector('[data-act=rolePlayer]');
-  if (rm) rm.classList.toggle('on', role === 'monster');
-  if (rp) rp.classList.toggle('on', role === 'player');
-  if (heldTarget.rig) releaseNPC();
-  if (local) {
-    local.hands.forEach(h => {
-      h.group.scale.setScalar(role === 'monster' ? 1.5 : 1);
-      const skinTex = role === 'monster' ? TEX.monsterSkin : TEX.skin;
-      h.handMat.map = skinTex;
-      h.handMat.color.setHex(role === 'monster' ? 0xff7a5a : 0xffffff);
-      h.handMat.needsUpdate = true;
-    });
-  }
-}
-function setTint(mode) {
-  S.tintMode = mode;
-  for (const r of rigs) r.applyTint(mode);
-  if (local) local.rig.applyTint(mode);
-  document.querySelectorAll('[data-act^=tint]').forEach(b => {
-    b.classList.toggle('on', b.dataset.act === 'tint' + mode[0].toUpperCase() + mode.slice(1));
-  });
-}
-function syncAccBtns() {
-  for (const k of ['hat', 'glasses', 'scarf']) {
-    const b = document.querySelector(`[data-act=${k}]`);
-    if (b) b.classList.toggle('on', S.accessories[k]);
-  }
-  for (const r of rigs) r.applyAccessories();
-  if (local) local.rig.applyAccessories();
-}
-
-const ACTIONS = {
-  spawnNpcPlayer: () => spawnRig('player'),
-  spawnNpcMonster: () => spawnRig('monster'),
-  spawnRagdoll: () => { const r = spawnRig('player'); if (r) { r.goPhysical(); r.state = 'RAGDOLL'; } },
-  spawnCrate: () => spawnProp('crate'),
-  spawnBarrel: () => spawnProp('barrel'),
-  spawnBall: () => spawnProp('ball'),
-  rolePlayer: () => setRole('player'),
-  roleMonster: () => setRole('monster'),
-  mirror: () => toggleMirror(),
-  hat: () => { S.accessories.hat = !S.accessories.hat; syncAccBtns(); },
-  glasses: () => { S.accessories.glasses = !S.accessories.glasses; syncAccBtns(); },
-  scarf: () => { S.accessories.scarf = !S.accessories.scarf; syncAccBtns(); },
-  tintNormal: () => setTint('normal'),
-  tintGray: () => setTint('gray'),
-  tintRed: () => setTint('red'),
-  tintBlue: () => setTint('blue'),
-  tintInvert: () => setTint('invert'),
-  testSplit: () => { const r = nearestRig(); if (r) r.splitInHalf(); },
-  testHead: () => { const r = nearestRig(); if (r) r.tearPart('head'); },
-  testArm: () => { const r = nearestRig(); if (r) r.tearPart(Math.random() < 0.5 ? 'uArmL' : 'uArmR'); },
-  testLeg: () => { const r = nearestRig(); if (r) r.tearPart(Math.random() < 0.5 ? 'thighL' : 'thighR'); },
-  testThrow: () => {
-    const r = nearestRig(); if (!r) return;
-    r.goPhysical(); r.state = 'RAGDOLL';
-    const yaw = getCameraYaw();
-    const fwd = new THREE.Vector3(-Math.sin(yaw), 0.35, -Math.cos(yaw)).multiplyScalar(18);
-    for (const n in r.bodies) r.bodies[n].velocity.set(fwd.x, fwd.y, fwd.z);
-    Audio.gib();
-  },
-  testPunch3: () => {
-    const r = nearestRig(); if (!r) return;
-    r.hits = 2;
-    r.receivePunch(new THREE.Vector3().copy(r.bodies.chest.position), new THREE.Vector3(0, 0, 1));
-  },
-  testPunch1: () => {
-    const r = nearestRig(); if (!r) return;
-    r.hits = 0;
-    r.receivePunch(new THREE.Vector3().copy(r.bodies.chest.position), new THREE.Vector3(0, 0, 1));
-  },
-  debugColliders: () => {
-    S.debugColliders = !S.debugColliders;
-    for (const r of rigs) for (const d of r.debugMeshes) d.visible = S.debugColliders;
-    document.querySelector('[data-act=debugColliders]').classList.toggle('on', S.debugColliders);
-  },
-  debugStates: () => {
-    S.debugStates = !S.debugStates;
-    document.querySelector('[data-act=debugStates]').classList.toggle('on', S.debugStates);
-  },
-  clearAll: () => {
-    for (let i = rigs.length - 1; i >= 0; i--) rigs[i].dispose();
-    for (const e of dynamicProps) {
-      scene.remove(e.mesh);
-      try { physics.removeBody(e.body); } catch (x) {}
-    }
-    dynamicProps.length = 0;
-  },
-};
-document.querySelectorAll('#ui button').forEach(b =>
-  b.addEventListener('click', () => { Audio.click(); (ACTIONS[b.dataset.act] || (() => {}))(); }));
-
-/* ===== СЕКЦИЯ: МИРОВОЕ VR-МЕНЮ (CanvasTexture, клик лучом) ===== */
-function buildVRMenu() {
-  const MENU_W = 512, MENU_H = 640;
-  const items = [];
-  let canvas, ctx, tex, group, menuMesh, visible = false;
-  const rows = [
-    ['Спавн NPC-игрока', 'spawnNpcPlayer'], ['Спавн NPC-монстра', 'spawnNpcMonster'],
-    ['Спавн рэгдолла', 'spawnRagdoll'], ['Ящик', 'spawnCrate'], ['Бочка', 'spawnBarrel'], ['Шар', 'spawnBall'],
-    ['Роль: ИГРОК', 'rolePlayer'], ['Роль: МОНСТР', 'roleMonster'],
-    ['Зеркало', 'mirror'], ['Шляпа', 'hat'], ['Очки', 'glasses'], ['Шарф', 'scarf'],
-    ['Тинт: обычный', 'tintNormal'], ['Тинт: инверсия', 'tintInvert'],
-    ['ТЕСТ: разорвать пополам', 'testSplit'], ['ТЕСТ: оторвать голову', 'testHead'],
-    ['ТЕСТ: оторвать руку', 'testArm'], ['ТЕСТ: бросок в стену', 'testThrow'], ['ТЕСТ: 3 удара', 'testPunch3'],
-  ];
-  function redraw() {
-    ctx.fillStyle = 'rgba(8,14,24,0.95)'; ctx.fillRect(0, 0, MENU_W, MENU_H);
-    ctx.fillStyle = '#4cf'; ctx.font = 'bold 26px sans-serif';
-    ctx.fillText('RILLA DEV MENU', 16, 34);
-    items.length = 0;
-    let y = 70;
-    for (const [label, act] of rows) {
-      ctx.fillStyle = '#16324a'; ctx.fillRect(14, y - 22, MENU_W - 28, 30);
-      ctx.strokeStyle = '#3af'; ctx.strokeRect(14, y - 22, MENU_W - 28, 30);
-      ctx.fillStyle = '#cfe'; ctx.font = '18px sans-serif';
-      ctx.fillText(label, 24, y);
-      items.push({ act, rect: { x: 14, y: y - 22, w: MENU_W - 28, h: 30 } });
-      y += 34;
-    }
-    tex.needsUpdate = true;
-  }
-  [canvas, ctx] = makeCanvas(MENU_W, MENU_H);
-  tex = new THREE.CanvasTexture(canvas);
-  group = new THREE.Group();
-  menuMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.875),
-    new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
-  group.add(menuMesh);
-  group.visible = false;
-  scene.add(group);
-  redraw();
-  vrMenu = {
-    toggle() {
-      visible = !visible;
-      group.visible = visible;
-      if (visible) {
-        const yaw = getCameraYaw();
-        const p = new THREE.Vector3(); camera.getWorldPosition(p);
-        group.position.set(p.x - Math.sin(yaw) * 1.2, Math.max(0.8, p.y - 0.1), p.z - Math.cos(yaw) * 1.2);
-        group.rotation.set(0, yaw, 0);
-        redraw();
-      }
-    },
-    click(raycaster) {
-      if (!visible) return false;
-      const hit = raycaster.intersectObject(menuMesh)[0];
-      if (!hit) return false;
-      const cx = hit.uv.x * MENU_W, cy = (1 - hit.uv.y) * MENU_H;
-      for (const it of items) {
-        const r = it.rect;
-        if (cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h) {
-          Audio.click();
-          (ACTIONS[it.act] || (() => {}))();
-          redraw();
-          return true;
-        }
-      }
-      return false;
-    },
-    get visible() { return visible; },
-  };
-}
-
-const rayLines = {};
-function buildRayLines() {
-  for (const side of ['L', 'R']) {
-    const line = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -3)]),
-      new THREE.LineBasicMaterial({ color: 0x44aaff }));
-    line.visible = false;
-    Input.controllers[side].ray.add(line);
-    rayLines[side] = line;
-  }
-}
-function updateVRMenuRay() {
-  if (!S.inVR || !vrMenu) return;
-  for (const side of ['L', 'R']) {
-    rayLines[side].visible = vrMenu.visible;
-    const wasDown = Input.menuLatch[side];
-    const down = Input.button(side).trigger;
-    if (down && !wasDown) {
-      const rayC = Input.controllers[side].ray;
-      const origin = new THREE.Vector3(); rayC.getWorldPosition(origin);
-      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(rayC.getWorldQuaternion(new THREE.Quaternion()));
-      const raycaster = new THREE.Raycaster(origin, dir);
-      vrMenu.click(raycaster);
-    }
-    Input.menuLatch[side] = down;
-  }
-}
-
-/* ===== СЕКЦИЯ: ГЛАВНЫЙ ЦИКЛ ===== */
-let fpsAcc = 0, fpsFrames = 0;
-function makeTextSprite() {
-  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
-  const g = c.getContext('2d');
-  const tex = new THREE.CanvasTexture(c);
-  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
-  spr.scale.set(1, 0.25, 1);
-  spr.userData.setText = (txt) => {
-    g.clearRect(0, 0, 256, 64);
-    g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(0, 0, 256, 64);
-    g.fillStyle = '#fc6'; g.font = '22px monospace'; g.fillText(txt, 8, 40);
-    tex.needsUpdate = true;
-  };
-  return spr;
-}
-function animate() {
-  renderer.setAnimationLoop((t) => {
-    try {
-    const dt = Math.min(clock.getDelta(), 0.05);
-    if (!animate._started) { animate._started = true; console.log('LOOP STARTED'); }
-    Input.pollXR();
-    Input.updatePC(dt);
-    updateVRMenuRay();
-    if (local) {
-      local.update(dt);
-      // Be the Monster: хват/бросок NPC правой рукой (grip нажат/отпущен)
-      const monsterGrip = S.role === 'monster' && (Input.button('R').grip || Input.pcGripDown.R);
-      if (monsterGrip && !heldTarget.rig) tryGrabNPC();
-      if (!monsterGrip && heldTarget.rig) releaseNPC();
-      updateHeld();
-    }
-    physics.step(1 / 60, dt, 3);
-    for (const rig of rigs) {
-      if (rig.gibbed) continue;
-      if (rig.state === 'BLENDED' && !rig.heldPart) rig.goPhysical();
-      rig.update(dt, t / 1000);
-      if (rig.debugLabel === undefined) {
-        rig.debugLabel = makeTextSprite();
-        scene.add(rig.debugLabel);
-      }
-      rig.debugLabel.visible = S.debugStates;
-      if (S.debugStates) {
-        const p = rig.bodies.head.position;
-        rig.debugLabel.position.set(p.x, p.y + 0.4, p.z);
-        rig.debugLabel.userData.setText(`${rig.name} ${rig.state}${rig.dead ? ' DEAD' : ''}`);
-      }
-    }
-    updateGibs(dt);
-    for (const e of dynamicProps) {
-      e.mesh.position.copy(e.body.position);
-      e.mesh.quaternion.copy(e.body.quaternion);
-    }
-    renderer.render(scene, camera);
-    fpsAcc += dt; fpsFrames++;
-    if (fpsAcc >= 0.5) {
-      document.getElementById('fps').textContent = 'FPS: ' + Math.round(fpsFrames / fpsAcc);
-      fpsAcc = 0; fpsFrames = 0;
-    }
-    const st = document.getElementById('state');
-    if (S.debugStates) {
-      st.textContent = rigs.filter(r => !r.gibbed).map(r => `${r.name}:${r.state}${r.dead ? ' DEAD' : ''}`).join(' | ')
-        + ` | role:${S.role}`;
-    } else st.textContent = `role: ${S.role}`;
-    } catch (loopErr) {
-      console.error('LOOP:', loopErr.message, loopErr.stack);
-      renderer.setAnimationLoop(null);
-    }
-  });
-}
-
-/* ===== СЕКЦИЯ: ЗАПУСК ===== */
-/* buildTextures/initScene/buildArena уже вызваны выше (до создания top-level мешей) */
-Input.init();
-buildVRMenu();
-buildRayLines();
-local = new LocalPlayer();
-spawnRig('player');   // стартовый NPC
-animate();
-
-document.getElementById('enterVR').addEventListener('click', async () => {
-  if (!navigator.xr) { alert('WebXR не поддерживается. На ПК играйте мышью+WASD.'); return; }
-  try {
-    const session = await navigator.xr.requestSession('immersive-vr', {
-      optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers'] });
-    await renderer.xr.setSession(session);
-  } catch (e) { alert('Не удалось войти в VR: ' + e.message); }
-});
-navigator.xr && navigator.xr.isSessionSupported('immersive-vr').then((ok) => {
-  if (!ok) document.getElementById('enterVR').textContent = 'VR недоступен (ПК-режим)';
-});
-
-/* ===== СЕКЦИЯ: ЧЕСТНЫЕ УПРОЩЕНИЯ =====
-1. Капсулы в физике: cannon-es не имеет капсульных форм — части рига это сферы;
-   вмятины — накладываемые меши, а не деформация вершин (тот же вид, дешевле на Quest).
-2. У локального игрока физическое тело одно (сфера) + видимые торс/голова; полный
-   12-телесный риг на ConeTwistConstraint у NPC.
-3. Зеркало: Reflector — второй проход 512x612, по умолчанию выключен (нагрузка на Quest).
-4. Звук: процедурный WebAudio, без сэмплов.
-===================================================================== */
-</script>
-</body>
-</html>
+/* ===== ИГРОК: состояние кастомизации ===== */
+const PAL=[['Серая',0x8a8a8a],['Красная',0xd94040],['Оранжевая',0xf08a2a],['Жёлтая',0xf2d03b],['Зелёная',0x4fb857],['Бирюзовая',0x37b7b0],['Синяя',0x3f6fe0],['Фиолетовая',0x8a55d6],['Розовая',0xe86fb0],['Чёрная',0x2a2a2a]];
+const S={color:6,hat:false,glasses:false,scarf:false,mirror:true,menu:false,monster:false};
+const player=makeAvatar(PAL[6][1],false);scene.add(player.g);
+const P={vel:new THREE.Vector3(),grounded:false};
+
+/* ===== РУКИ (контроллеры VR + запасные позиции для ПК) ===== */
+const hands={};
+for(const side of['left','right']){const h={side,fake:new THREE.Group(),curl:{i:.25,m:.25,t:.25},ax:[0,0],grab:null,hist:[],gripDown:false,xr:null,gp:null};rig.add(h.fake);h.model=makeHand(side,player.skin);hands[side]=h;}
+const hv=Object.values(hands);
+const gOf=h=>renderer.xr.isPresenting&&h.xr?h.xr:h.fake;
+function attach(){hv.forEach(h=>gOf(h).add(h.model));}attach();
+for(let i=0;i<2;i++){const c=renderer.xr.getController(i),gr=renderer.xr.getControllerGrip(i);rig.add(c,gr);
+ c.addEventListener('connected',e=>{const h=hands[e.data.handedness];if(!h)return;h.gp=e.data.gamepad;h.xr=gr;attach();});}
+renderer.xr.addEventListener('sessionstart',attach);renderer.xr.addEventListener('sessionend',attach);
+const handWorld=(h,out)=>out.copy(gOf(h).position).applyQuaternion(rig.quaternion).add(rig.position);
+const haptic=(h,a,ms)=>{try{h.gp&&h.gp.hapticActuators&&h.gp.hapticActuators[0].pulse(a,ms);}catch(e){}};
+
+/* ===== КОМПЬЮТЕР: кнопки, которые жмутся пальцем ===== */
+const KEYS=[];
+{const defs=PAL.map((p,i)=>({l:String((i+1)%10),bg:'#'+p[1].toString(16).padStart(6,'0'),a:()=>{S.color=i;refresh();}}))
+ .concat([['Шляпа','hat'],['Очки','glasses'],['Шарф','scarf'],['Зерк.','mirror']].map(([l,k])=>({l,bg:'#556',a:()=>{S[k]=!S[k];refresh();}})),[{l:'Кровь',bg:'#722',a:()=>bloodTest()}]);
+ defs.forEach((d,i)=>{const c=i%5,r=i/5|0;
+  const lab=new THREE.MeshBasicMaterial({map:cvs(64,64,(g,w,h)=>{g.fillStyle=d.bg;g.fillRect(0,0,w,h);g.fillStyle='#fff';g.strokeStyle='#000';g.lineWidth=4;g.font='bold 22px sans-serif';g.textAlign='center';g.textBaseline='middle';g.strokeText(d.l,32,32);g.fillText(d.l,32,32);})});
+  const k=new THREE.Mesh(new THREE.BoxGeometry(.075,.03,.075),plain(0xdddddd));k.position.set(-.24+c*.12,.03,-.12+r*.12);
+  const lp=new THREE.Mesh(new THREE.PlaneGeometry(.065,.065),lab);lp.rotation.x=-Math.PI/2;lp.position.y=.0155;k.add(lp);panel.add(k);
+  KEYS.push({m:k,x:k.position.x,z:k.position.z,a:d.a,down:false});});}
+function pressKey(k){k.a();}
+function drawScreen(){const g=sg;g.fillStyle='#0c1620';g.fillRect(0,0,512,300);g.fillStyle='#8cf';g.font='bold 30px sans-serif';g.fillText('RILLA · персонаж',20,44);
+ g.fillStyle='#'+PAL[S.color][1].toString(16).padStart(6,'0');g.fillRect(20,70,120,120);g.fillStyle='#fff';g.font='28px sans-serif';g.fillText('Цвет: '+PAL[S.color][0],160,110);
+ g.fillText((S.hat?'☑':'☐')+' шляпа  '+(S.glasses?'☑':'☐')+' очки',160,150);g.fillText((S.scarf?'☑':'☐')+' шарф  '+(S.mirror?'☑':'☐')+' зеркало',160,190);
+ g.font='22px sans-serif';g.fillStyle='#aaa';g.fillText('Нажимай кнопки пальцем (1–0 = цвет)',20,260);sTex.needsUpdate=true;}
+
+/* ===== МЕНЮ НА РУКЕ (открывается на X, тыкать правым указательным) ===== */
+const mc=document.createElement('canvas');mc.width=mc.height=512;const mg=mc.getContext('2d');const mTex=new THREE.CanvasTexture(mc);mTex.colorSpace=THREE.SRGBColorSpace;
+const menuPlane=new THREE.Mesh(new THREE.PlaneGeometry(.2,.2),new THREE.MeshBasicMaterial({map:mTex,transparent:true,side:THREE.DoubleSide}));
+menuPlane.rotation.x=-Math.PI/2;menuPlane.position.set(0,.1,-.04);menuPlane.visible=false;hands.left.model.add(menuPlane);
+const MENU=[
+ {t:()=>'Цвет: '+PAL[S.color][0],a:()=>{S.color=(S.color+1)%10;refresh();}},
+ {t:()=>'Шляпа',on:()=>S.hat,a:()=>{S.hat=!S.hat;refresh();}},
+ {t:()=>'Очки',on:()=>S.glasses,a:()=>{S.glasses=!S.glasses;refresh();}},
+ {t:()=>'Шарф',on:()=>S.scarf,a:()=>{S.scarf=!S.scarf;refresh();}},
+ {t:()=>'Зеркало',on:()=>S.mirror,a:()=>{S.mirror=!S.mirror;refresh();}},
+ {t:()=>'Кровь',a:()=>bloodTest()},
+ {t:()=>'→ Главная',a:()=>setZone(0)},{t:()=>'→ Тест',a:()=>setZone(1)},
+ {t:()=>'→ Backrooms',a:()=>setZone(2)},{t:()=>'Монстр',on:()=>S.monster,a:()=>setRole(!S.monster)},
+ {t:()=>'+ NPC',a:()=>spawnNPC()},{t:()=>'Пополам',a:()=>TESTS.rip()},
+ {t:()=>'Голова',a:()=>TESTS.head()},{t:()=>'Рука',a:()=>TESTS.arm()},
+ {t:()=>'Бросок',a:()=>TESTS.throw()},{t:()=>'3 удара',a:()=>TESTS.punch()}];
+let hover=-1;
+function drawMenu(){mg.clearRect(0,0,512,512);mg.fillStyle='#000c';mg.fillRect(0,0,512,512);
+ MENU.forEach((b,i)=>{const x=14+(i%2)*248,y=14+(i>>1)*60;mg.fillStyle=i===hover?'#5a8cff':(b.on&&b.on()?'#2f7f4f':'#34384a');mg.fillRect(x,y,236,52);
+  mg.fillStyle='#fff';mg.font='bold 26px sans-serif';mg.textAlign='center';mg.textBaseline='middle';mg.fillText(b.t(),x+118,y+27);});mTex.needsUpdate=true;}
+
+/* ===== КРОВЬ: лужи испаряются и уменьшаются ===== */
+const bloodTex=cvs(128,128,(g,w,h)=>{const r=g.createRadialGradient(64,64,4,64,64,60);r.addColorStop(0,'rgba(120,0,0,1)');r.addColorStop(.6,'rgba(90,0,0,.9)');r.addColorStop(1,'rgba(60,0,0,0)');g.fillStyle=r;g.fillRect(0,0,w,h);});
+const puddles=[],pGeo=new THREE.PlaneGeometry(1,1),LIFE=50;
+function bloodAt(p,n,r=.5){const m=new THREE.Mesh(pGeo,new THREE.MeshBasicMaterial({map:bloodTex,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2}));
+ m.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),n);m.rotateZ(rnd()*6);m.position.copy(p).addScaledVector(n,.012);scene.add(m);puddles.push({m,r,age:0});
+ if(puddles.length>24){const o=puddles.shift();scene.remove(o.m);o.m.material.dispose();}}
+const blood=(x,z,r)=>bloodAt(new THREE.Vector3(x,0,z),new THREE.Vector3(0,1,0),r);
+function updBlood(dt){for(let i=puddles.length-1;i>=0;i--){const p=puddles[i];p.age+=dt;const k=p.age/LIFE;
+ if(k>=1){scene.remove(p.m);p.m.material.dispose();puddles.splice(i,1);continue;}
+ p.m.scale.setScalar(p.r*2*Math.min(1,p.age/2.5)*(1-.45*k));p.m.material.opacity=.9*Math.pow(1-k,.8);}}
+
+/* ===== ЖЕРТВЫ (NPC): анимация → верле-рэгдолл; хват, отрыв, разрыв, гибсы ===== */
+const npcs=[],PK=['H','C','L','R'],V=(x,y,z)=>new THREE.Vector3(x,y,z),qq=new THREE.Quaternion(),hn=V(0,0,0),_d=V(0,0,0);
+const pieces=[],gArm=new THREE.CapsuleGeometry(.05,.5,4,8),gTor=new THREE.CapsuleGeometry(.17,.12,4,10);
+// гибсы: один InstancedMesh (кровь/куски)
+const GN=160,gMesh=new THREE.InstancedMesh(new THREE.BoxGeometry(.05,.05,.05),new THREE.MeshLambertMaterial({color:0x8a0f0f}),GN),gp=Array.from({length:GN},()=>({p:V(0,-99,0),v:V(0,0,0),t:0})),gM=new THREE.Matrix4();let gi=0;gMesh.frustumCulled=false;scene.add(gMesh);
+function gibs(p,n,sp=4){for(let i=0;i<n;i++){const g=gp[gi++%GN];g.p.copy(p);g.v.set((rnd()-.5)*sp,rnd()*sp,(rnd()-.5)*sp);g.t=3+rnd()*3;}}
+function updGibs(dt){for(let i=0;i<GN;i++){const g=gp[i];if(g.t>0){g.t-=dt;g.v.y-=9.8*dt;g.p.addScaledVector(g.v,dt);if(g.p.y<.03){g.p.y=.03;g.v.set(0,0,0);}}
+ gM.makeTranslation(g.p.x,g.t>0?g.p.y:-99,g.p.z);gMesh.setMatrixAt(i,gM);}gMesh.instanceMatrix.needsUpdate=true;}
+function hitCol(p,r){let pen=false;hn.set(0,0,0);for(const c of colliders){if(p.x+r<c.min.x||p.x-r>c.max.x||p.y+r<c.min.y||p.y-r>c.max.y||p.z+r<c.min.z||p.z-r>c.max.z)continue;
+ closest(c,p);_d.subVectors(p,cp);const l=_d.length();if(l>=r)continue;if(l>1e-5)_d.divideScalar(l);else _d.set(0,1,0);p.addScaledVector(_d,r-l);hn.copy(_d);pen=true;}return pen;}
+function npc(col,kind,x,z){const a=makeAvatar(col,true);scene.add(a.g);
+ const v={a,kind,x,z,ang:0,state:'anim',P:{},cur:{},arms:[1,1],thin:[1,1,1],hits:0,cd:0,knock:0};
+ for(const k of PK){v.P[k]={x:V(0,0,0),o:V(0,0,0),pin:false};v.cur[k]=V(0,0,0);}
+ const d=new THREE.Mesh(new THREE.SphereGeometry(.12,8,6),plain(0x5a0a0a));d.scale.set(1,1,.35);d.position.set(.1,.1,-.15);d.visible=false;a.torso.add(d);v.dent=d;
+ npcs.push(v);updNPC(v,0,0);
+ if(npcs.length>10){const i=npcs.findIndex(n=>n.state!=='anim');if(i>=0){npcs[i].state='gone';scene.remove(npcs[i].a.g);npcs.splice(i,1);}}return v;}
+function ragInit(v,knock=4){if(v.state!=='anim')return;for(const k of PK){v.P[k].x.copy(v.cur[k]);v.P[k].o.copy(v.cur[k]);}v.state='rag';v.knock=knock;}
+function pose(v,t,dt){let th=Math.PI,x=v.x,z=v.z,sw=Math.sin(t*1.5)*.03;
+ if(v.kind==='walk'){v.ang+=dt*.5;x=TX+Math.cos(v.ang)*4;z=2+Math.sin(v.ang)*4;th=Math.atan2(Math.sin(v.ang),-Math.cos(v.ang));sw=Math.sin(t*5)*.25;v.x=x;v.z=z;}
+ const fw=V(-Math.sin(th),0,-Math.cos(th)),rt=V(Math.cos(th),0,-Math.sin(th)),hp=V(x,1.5+(v.kind==='walk'?Math.abs(Math.sin(t*5))*.03:0),z);
+ const L=hp.clone().addScaledVector(rt,-.3).addScaledVector(fw,sw),R=hp.clone().addScaledVector(rt,.3).addScaledVector(fw,-sw);L.y-=.6;R.y-=.6;
+ return {hp,hq:new THREE.Quaternion().setFromEuler(new THREE.Euler(0,th,0)),L,R};}
+const isHeld=v=>hv.some(h=>h.hold&&h.hold.v===v),unhold=v=>hv.forEach(h=>{if(h.hold&&h.hold.v===v)h.hold=null;});
+function fix(a,b,len){_d.subVectors(b.x,a.x);const l=_d.length()||1e-4,e=(l-len)/l;if(a.pin&&b.pin)return;if(a.pin)b.x.addScaledVector(_d,-e);else if(b.pin)a.x.addScaledVector(_d,e);else{a.x.addScaledVector(_d,e*.5);b.x.addScaledVector(_d,-e*.5);}}
+function stepRag(v,dt){const P=v.P;
+ for(const k of PK){const p=P[k];if(p.pin)continue;_d.subVectors(p.x,p.o).multiplyScalar(.985);p.o.copy(p.x);p.x.add(_d);p.x.y-=9.8*dt*dt;}
+ for(let i=0;i<4;i++){fix(P.H,P.C,.45);if(!P.L.pin)fix(P.C,P.L,.7);if(!P.R.pin)fix(P.C,P.R,.7);}
+ if(!P.C.pin)for(const [k,rest] of[['L',.7],['R',.7],['H',.45]])if(P[k].pin){const d=P[k].x.clone().sub(P.C.x),l=d.length();if(l>rest)P.C.x.addScaledVector(d,(l-rest)/l*Math.min(1,dt));}  // тело тянется за схваченной конечностью
+ for(const k of PK){const p=P[k],sp=_d.subVectors(p.x,p.o).length()/dt;
+  if(hitCol(p.x,.12)){if(sp>7){burst(v,hn.clone(),p.x.clone());return;}p.o.lerp(p.x,.12);}}}   // удар >7 м/с о стену/пол → разлёт
+function piece(m,p,vel){m.position.copy(p);scene.add(m);pieces.push({m,v:vel,w:V((rnd()-.5)*12,(rnd()-.5)*12,0),t:0});if(pieces.length>26)scene.remove(pieces.shift().m);}
+function updPieces(dt){for(let i=pieces.length-1;i>=0;i--){const o=pieces[i];o.t+=dt;if(o.t>40){scene.remove(o.m);pieces.splice(i,1);continue;}
+ o.v.y-=9.8*dt;o.m.position.addScaledVector(o.v,dt);o.m.rotation.x+=o.w.x*dt;o.m.rotation.y+=o.w.y*dt;
+ if(hitCol(o.m.position,.1)){const vn=o.v.dot(hn);o.v.addScaledVector(hn,-1.5*vn).multiplyScalar(.6);o.w.multiplyScalar(.5);}}}
+const armPiece=(v,p,vel)=>piece(new THREE.Mesh(gArm,v.a.skin),p,vel);
+function kill(v,punch){v.state='dead';if(punch)v.dent.visible=true;const c=v.P.C.x;blood(c.x,c.z,.9);gibs(c,14,2.5);}
+function burst(v,n,p,d){if(v.state==='gone')return;ragInit(v);v.state='gone';unhold(v);scene.remove(v.a.g);
+ const C=v.P.C.x.clone(),dd=d||V(rnd()-.5,0,rnd()-.5).normalize(),up=V(0,3,0);
+ piece(v.a.head.clone(),v.P.H.x,V(0,4,0).addScaledVector(dd,2));
+ piece(new THREE.Mesh(gTor,v.a.skin),C.clone().add(V(0,.2,0)),dd.clone().multiplyScalar(3).add(up));piece(new THREE.Mesh(gTor,v.a.skin),C.clone().add(V(0,-.1,0)),dd.clone().multiplyScalar(-3).add(up));
+ armPiece(v,v.P.L.x,V(-2,4,rnd()*2-1));armPiece(v,v.P.R.x,V(2,4,rnd()*2-1));
+ gibs(C,60,6);blood(C.x,C.z,1.1);if(n)bloodAt(p.clone().addScaledVector(n,-.12),n,.7);}   // + декаль на стене/полу в точке удара
+function tearLimb(v,k){ragInit(v);const p=v.P[k].x.clone();
+ if(k==='H'){piece(v.a.head.clone(),p,V(rnd()*2-1,3,rnd()*2-1));v.a.head.visible=false;v.thin[2]=0;kill(v,false);gibs(p,20,3);}
+ else{armPiece(v,p,V(rnd()*2-1,3,rnd()*2-1));v.arms[k==='L'?0:1]=0;v.knock=4;gibs(v.P.C.x,12,3);blood(v.P.C.x.x,v.P.C.x.z,.5);}
+ unhold(v);}
+function hit(v,dir,bypass){if(v.state==='gone'||v.state==='dead'||(v.cd>0&&!bypass))return;v.cd=.5;v.hits++;ragInit(v);v.knock=4;
+ for(const k of PK)v.P[k].o.addScaledVector(dir,-.12);   // импульс удара
+ if(v.hits>=3)kill(v,true);}                              // 3-й удар: смерть + вмятина + кровь
+function updNPC(v,t,dt){if(v.state==='gone')return;v.cd-=dt;
+ if(v.state==='anim'){const p=pose(v,t,dt);v.cur.H.copy(p.hp);v.cur.C.copy(p.hp);v.cur.C.y-=.45;v.cur.L.copy(p.L);v.cur.R.copy(p.R);v.a.update(p.hp,p.hq,p.L,p.R,DN,.3,v);return;}
+ stepRag(v,dt);if(v.state==='gone')return;
+ const H=v.P.H.x,C=v.P.C.x,dn=C.clone().sub(H).normalize();
+ v.a.update(H,qq.setFromUnitVectors(UP,dn.clone().negate()),v.P.L.x,v.P.R.x,dn,.7,v);
+ if(v.state==='rag'&&!isHeld(v)){v.knock-=dt;if(v.knock<=0){v.x=C.x;v.z=C.z;v.kind='stand';v.state='anim';}}}   // встаёт через 4 сек
+/* Режим монстра: grip у жертвы = хват; кулак (все 3 кнопки) + замах = удар */
+function monsterUpdate(dt){
+ for(const v of npcs)for(const k of PK)v.P[k].pin=false;
+ for(const h of hv){handWorld(h,hw);if(!h.pw){h.pw=hw.clone();h.wv=V(0,0,0);h.wp=V(0,0,0);}
+  h.wv.lerp(hw.clone().sub(h.pw).divideScalar(dt),.5);h.pw.copy(hw);h.wp.copy(hw);
+  if(!S.monster){h.hold=null;continue;}
+  const fist=h.curl.i>.6&&h.curl.m>.6&&h.curl.t>.4;
+  if(h.hold&&(!h.gripDown||fist||h.hold.v.state==='gone')){const w=h.hold.v;if(w.state!=='gone'){const p=w.P[h.hold.k];p.o.copy(p.x).addScaledVector(h.wv,-dt*1.3);w.knock=4;}h.hold=null;}   // бросок
+  if(!h.hold&&h.gripDown&&h.curl.i<.5){let bd=.45,b=null;for(const v of npcs){if(v.state==='gone')continue;for(const k of PK){const d=hw.distanceTo(v.state==='anim'?v.cur[k]:v.P[k].x);if(d<bd){bd=d;b={v,k};}}}
+   if(b){ragInit(b.v);h.hold=b;haptic(h,.7,60);}}
+  if(h.hold){const p=h.hold.v.P[h.hold.k];p.pin=true;p.o.copy(p.x);p.x.copy(hw);}
+  else if(fist&&h.wv.length()>2.5){for(const v of npcs){if(v.state==='gone'||v.state==='dead'||isHeld(v))continue;const a=v.state==='anim';
+    if(hw.distanceTo(a?v.cur.C:v.P.C.x)<.5||hw.distanceTo(a?v.cur.H:v.P.H.x)<.4){hit(v,h.wv.clone().normalize(),false);haptic(h,1,80);}}}}
+ for(const v of npcs){if(v.state==='gone')continue;const hs=hv.filter(h=>h.hold&&h.hold.v===v);v.thin=[1,1,v.a.head.visible?1:0];if(!hs.length)continue;
+  if(hs.length===2&&hs[0].hold.k==='C'&&hs[1].hold.k==='C'){if(hs[0].wp.distanceTo(hs[1].wp)>1.3)burst(v,null,v.P.C.x.clone(),hs[0].wp.clone().sub(hs[1].wp).normalize());continue;}   // разрыв пополам
+  for(const h of hs){const k=h.hold.k;if(k==='C')continue;const o=hs.find(x=>x!==h),s=h.wp.distanceTo(o?o.wp:v.P.C.x),rest=k==='H'?.45:.7;
+   const th=Math.max(.3,1-(s-rest)*.45);if(k==='H')v.thin[2]=th;else v.thin[k==='L'?0:1]=th;   // кожа тянется и тончает
+   if(s>rest*(k==='H'?2.6:2.2)){tearLimb(v,k);break;}}}}
+function setRole(m){S.monster=m;player.k=m?1.6:1;player.maw.visible=m;hv.forEach(h=>{monsterHand(h.model,m);h.hold=null;});refresh();}
+function spawnNPC(){const p=camera.getWorldPosition(V(0,0,0)),d=camera.getWorldDirection(V(0,0,0));d.y=0;d.normalize();return npc(PAL[Math.random()*10|0][1],'stand',p.x+d.x*2.2,p.z+d.z*2.2);}
+const TESTS={rip:()=>{const v=spawnNPC();ragInit(v);burst(v,null,v.P.C.x.clone(),V(1,0,0));},head:()=>tearLimb(spawnNPC(),'H'),arm:()=>tearLimb(spawnNPC(),'L'),
+ throw:()=>{const v=spawnNPC();ragInit(v);const d=camera.getWorldDirection(V(0,0,0));for(const k of PK)v.P[k].o.copy(v.P[k].x).addScaledVector(d,-14/60);},
+ punch:()=>{const v=spawnNPC();for(let i=0;i<3;i++)hit(v,V(0,.3,-1),true);}};
+const nStand=npc(0xe86fb0,'stand',TX-5,-5),nWalk=npc(0x4fb857,'walk',TX,2),nDead=npc(0xf2d03b,'dead',TX+5,-5);
+nStand.a.hat.visible=true;nWalk.a.glasses.visible=true;nDead.a.scarf.visible=true;
+nStand.a.glasses.visible=nStand.a.scarf.visible=nWalk.a.hat.visible=nWalk.a.scarf.visible=nDead.a.hat.visible=nDead.a.glasses.visible=false;
+nDead.cur.H.set(TX+5,1.2,-5);nDead.cur.C.set(TX+5,.75,-5);nDead.cur.L.set(TX+4.5,.7,-5);nDead.cur.R.set(TX+5.5,.7,-5);ragInit(nDead);nDead.state='dead';
+
+/* ===== СОСТОЯНИЕ → ВИД ===== */
+function refresh(){player.skin.color.set(PAL[S.color][1]);player.hat.visible=S.hat;player.glasses.visible=S.glasses;player.scarf.visible=S.scarf;mirrorGroup.visible=S.mirror;drawScreen();drawMenu();}
+function bloodTest(){blood(TX+5+Math.random()-.5,-4.6+Math.random()-.5,.9);blood(TX+5+(Math.random()-.5)*2,-4.5+Math.random()*2,.4);}
+player.hat.visible=player.glasses.visible=player.scarf.visible=false;
+refresh();bloodTest();
+
+/* ===== ВВОД ===== */
+const keys={};let jumpReq=false,locked=false,turned=false;
+addEventListener('keydown',e=>{keys[e.code]=1;if(e.code==='Space')jumpReq=true;
+ const d=e.code.startsWith('Digit')?+e.code[5]:-1;if(d>=0){S.color=(d+9)%10;refresh();}
+ const m={KeyH:'hat',KeyG:'glasses',KeyF:'scarf',KeyM:'mirror'}[e.code];if(m){S[m]=!S[m];refresh();}
+ if(e.code==='KeyB')bloodTest();if(e.code==='KeyR')setRole(!S.monster);if(e.code==='KeyN')spawnNPC();const t={KeyY:'rip',KeyU:'head',KeyI:'arm',KeyO:'throw',KeyP:'punch'}[e.code];if(t)TESTS[t]();if(e.code==='KeyQ')setZone((zone+1)%3);});
+addEventListener('keyup',e=>keys[e.code]=0);
+renderer.domElement.addEventListener('click',()=>{if(!renderer.xr.isPresenting&&!locked)renderer.domElement.requestPointerLock();});
+document.addEventListener('pointerlockchange',()=>locked=document.pointerLockElement===renderer.domElement);
+addEventListener('mousemove',e=>{if(!locked)return;rig.rotation.y-=e.movementX*.0022;camera.rotation.x=Math.max(-1.4,Math.min(1.4,camera.rotation.x-e.movementY*.0022));});
+const ray=new THREE.Raycaster();
+addEventListener('mousedown',()=>{if(!locked)return;ray.setFromCamera({x:0,y:0},camera);const hit=ray.intersectObjects(KEYS.map(k=>k.m),false)[0];
+ if(hit&&hit.distance<3.5)pressKey(KEYS.find(k=>k.m===hit.object));});
+const dz=v=>Math.abs(v)<.15?0:v;
+function readInput(){let mv=[0,0],turn=0;
+ if(renderer.xr.isPresenting){for(const h of hv){const gp=h.gp;if(!gp)continue;const b=gp.buttons,v=i=>b[i]?b[i].value:0;
+   h.curl.i=v(0);h.curl.m=v(1);h.curl.t=Math.max(v(3),v(4),v(5));h.gripDown=v(1)>.5;h.ax=[dz(gp.axes[2]||0),dz(gp.axes[3]||0)];
+   const p4=b[4]&&b[4].pressed,p5=b[5]&&b[5].pressed;
+   if(h.side==='left'){if(p4&&!h.p4){S.menu=!S.menu;menuPlane.visible=S.menu;}}else turn=h.ax[0];
+   h.p4=p4;h.p5=p5;}}
+ else{mv=[(keys.KeyD?1:0)-(keys.KeyA?1:0),(keys.KeyS?1:0)-(keys.KeyW?1:0)];camera.position.set(0,1.6,0);
+  const o=[[-.22,-.28,-.45],[.22,-.28,-.45]];hv.forEach((h,i)=>{h.fake.position.set(...o[i]).applyQuaternion(camera.quaternion).add(camera.position);h.fake.quaternion.copy(camera.quaternion);h.gripDown=false;});}
+ return {mv,turn};}
+
+/* ===== ФИЗИКА И ГОРИЛЛА-ЛОКОМОЦИЯ ===== */
+const hw=new THREE.Vector3(),cp=new THREE.Vector3(),head=new THREE.Vector3();
+const dist=(c,p)=>closest(c,p).distanceTo(p);
+function closest(c,p){return cp.set(Math.min(Math.max(p.x,c.min.x),c.max.x),Math.min(Math.max(p.y,c.min.y),c.max.y),Math.min(Math.max(p.z,c.min.z),c.max.z));}
+function collide(){P.grounded=false;
+ for(let pass=0;pass<2;pass++){head.copy(camera.position).applyQuaternion(rig.quaternion).add(rig.position);
+  const sp=[[head.x,rig.position.y+.3,head.z,.3],[head.x,rig.position.y+.95,head.z,.28],[head.x,head.y,head.z,.2]];
+  for(const s of sp){const p=V(s[0],s[1],s[2]);for(const c of colliders){
+   if(p.x+s[3]<c.min.x||p.x-s[3]>c.max.x||p.y+s[3]<c.min.y||p.y-s[3]>c.max.y||p.z+s[3]<c.min.z||p.z-s[3]>c.max.z)continue;
+   closest(c,p);const d=p.clone().sub(cp),l=d.length();if(l>=s[3])continue;
+   const n=l>1e-5?d.divideScalar(l):V(0,1,0),pen=s[3]-l;rig.position.addScaledVector(n,pen);p.addScaledVector(n,pen);
+   const vn=P.vel.dot(n);if(vn<0)P.vel.addScaledVector(n,-vn);if(n.y>.6)P.grounded=true;}}}}
+function physics(dt,inp){
+ // Только руки: касание поверхности (или grip) → тело движется противоположно движению руки. Стики/прыжок в VR не используются.
+ let contact=false,rel=null;const K=S.monster?1.2:1,vr=renderer.xr.isPresenting;
+ for(const h of hv){const lp=gOf(h).position;if(!h.pl)h.pl=lp.clone();handWorld(h,hw);
+  if(h.gripDown&&!h.grab&&!h.hold)for(const c of colliders)if(dist(c,hw)<.15*K){h.grab=hw.clone();h.hist=[];haptic(h,.6,60);break;}
+  if(!h.gripDown&&h.grab)h.grab=null;
+  let d=null;
+  if(h.grab)d=h.grab.clone().sub(hw);
+  else if(vr&&!h.hold){for(const c of colliders)if(dist(c,hw)<.08*K){d=h.pl.clone().sub(lp).applyQuaternion(rig.quaternion).multiplyScalar(K);break;}}
+  if(d&&d.length()<.6){rig.position.add(d);h.hist.push(d.clone().divideScalar(dt));if(h.hist.length>6)h.hist.shift();contact=true;if(!h.act)haptic(h,.3,25);h.act=true;}
+  else{if(h.act&&h.hist.length){const a=V(0,0,0);h.hist.forEach(x=>a.add(x));rel=a.divideScalar(h.hist.length);}h.act=false;h.hist=[];}
+  h.pl.copy(lp);}
+ if(contact)P.vel.set(0,0,0);
+ else{if(rel){P.vel.copy(rel).multiplyScalar(1.15*K);if(P.vel.length()>9*K)P.vel.setLength(9*K);}   // инерция после толчка
+  P.vel.y-=9.8*dt;
+  if(!vr){camera.getWorldDirection(hw);hw.y=0;hw.normalize();const r=V(-hw.z,0,hw.x),w=hw.multiplyScalar(-inp.mv[1]).addScaledVector(r,inp.mv[0]).multiplyScalar(3.5);if(P.grounded){P.vel.x=w.x;P.vel.z=w.z;if(jumpReq)P.vel.y=5.5;}}  // ПК-запасной вариант
+  else if(P.grounded){const k=Math.exp(-6*dt);P.vel.x*=k;P.vel.z*=k;}
+  rig.position.addScaledVector(P.vel,dt);}
+ jumpReq=false;collide();
+ if(rig.position.y<-20)setZone(zone);
+ // рывковый поворот правым стиком вокруг головы
+ if(Math.abs(inp.turn)>.7&&!turned){rig.updateMatrixWorld(true);const a=camera.getWorldPosition(V(0,0,0));rig.rotation.y-=Math.sign(inp.turn)*Math.PI/6;rig.updateMatrixWorld(true);rig.position.add(a.sub(camera.getWorldPosition(V(0,0,0))));}
+ turned=Math.abs(inp.turn)>.5;}
+
+/* ===== ТЫК ПАЛЬЦЕМ: меню и клавиши ===== */
+const tip=new THREE.Vector3();
+function poke(){if(!renderer.xr.isPresenting)return;
+ const keysTouched=new Set();
+ for(const h of hv){h.model.tip.getWorldPosition(tip);
+  for(const k of KEYS){const l=panel.worldToLocal(tip.clone());
+   if(Math.abs(l.x-k.x)<.04&&Math.abs(l.z-k.z)<.04&&l.y<.04&&l.y>-.03)keysTouched.add(k);}}
+ for(const k of KEYS){const on=keysTouched.has(k);if(on&&!k.down){pressKey(k);for(const h of hv)haptic(h,.4,30);}k.down=on;k.m.position.y=on?.018:.03;}
+ if(!S.menu)return;hands.right.model.tip.getWorldPosition(tip);const l=menuPlane.worldToLocal(tip.clone());
+ let idx=-1;if(Math.abs(l.z)<.025){const px=(l.x+.1)/.2*512,py=(.1-l.y)/.2*512,c=Math.floor((px-14)/248),r=Math.floor((py-14)/60);
+  if(c>=0&&c<2&&r>=0&&r<8&&(px-14)%248<236&&(py-14)%60<52)idx=r*2+c;}
+ if(idx!==hover){const was=hover;hover=idx;if(idx>=0&&was<0){MENU[idx].a();haptic(hands.right,.5,40);}drawMenu();}}
+
+/* ===== ГЛАВНЫЙ ЦИКЛ ===== */
+const clock=new THREE.Clock(),hint=document.getElementById('hint');
+hint.textContent='ПК: клик — мышь, WASD, Пробел, ЛКМ — кнопки компьютера. Цифры 1–0 цвет, H/G/F/M аксессуары+зеркало, B кровь, Q зона,\nR роль монстра, N + NPC, тесты: Y пополам, U голова, I рука, O бросок, P 3 удара\nVR: хождение ТОЛЬКО руками — отталкивайся/цепляйся (grip = держаться). X — меню на руке (тыкай правым пальцем).\nМонстр: grip у жертвы = схватить (тяни конечность — растянется и оторвётся; обеими за торс — разорвать), бросок в стену = разлёт, кулак (триггер+grip+A/B) + замах = удар';
+renderer.xr.addEventListener('sessionstart',()=>hint.style.display='none');renderer.xr.addEventListener('sessionend',()=>hint.style.display='');
+const lh=new THREE.Vector3(),rh=new THREE.Vector3(),cq=new THREE.Quaternion(),hpos=new THREE.Vector3(),fd=new THREE.Vector3();
+let time=0;
+renderer.setAnimationLoop(()=>{const dt=Math.min(clock.getDelta(),.025);time+=dt;
+ const inp=readInput();monsterUpdate(dt);physics(dt,inp);rig.updateMatrixWorld(true);
+ for(const h of hv)setCurl(h.model,h.curl.i,h.curl.m,h.curl.t);
+ // аватар игрока: голова чуть позади камеры, чтобы не закрывала обзор
+ camera.getWorldPosition(hpos);camera.getWorldDirection(fd);camera.getWorldQuaternion(cq);hpos.addScaledVector(fd,-.2*player.k);
+ player.update(hpos,cq,handWorld(hands.left,lh),handWorld(hands.right,rh));
+ poke();
+ npcs.forEach(n=>updNPC(n,time,dt));updPieces(dt);updGibs(dt);updBlood(dt);
+ if(zone===2){backLight.position.copy(rig.position).add(V(0,2.4,0));backLight.intensity=5+Math.sin(time*37)*.4*(Math.sin(time*.7)>.9?3:.3);}
+ renderer.render(scene,camera);});
+setZone(0);
+</script></body></html>
