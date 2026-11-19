@@ -353,18 +353,15 @@ function buildAvatar(gltf, isMirror) {
   const group = new THREE.Group();
   const model = gltf.scene;
 
-  // вписываем в рост
-  const box = new THREE.Box3().setFromObject(model);
-  const size = new THREE.Vector3(); box.getSize(size);
-  const h = size.y;
-  const scale = CONFIG.modelHeight / h;
+  // НАТИВНАЯ высота модели из GLB accessor (min/max по Y) ≈ 1.0685 м.
+  // Жёстко задаём масштаб — без Box3, чтобы исключить любые сюрпризы.
+  const NATIVE_HEIGHT = 1.0685;
+  const scale = CONFIG.modelHeight / NATIVE_HEIGHT;
   model.scale.setScalar(scale);
-  model.updateMatrixWorld(true);
 
-  // ставим ступни на y=0
+  // ступни уже почти на y=0 (min y ≈ 0), но подровняем на всякий
   const b2 = new THREE.Box3().setFromObject(model);
-  const minY = b2.min.y;
-  model.position.y -= minY;
+  model.position.y -= b2.min.y;
 
   // разворачиваем модель лицом к игроку (модель смотрит +Z, камера — в −Z)
   model.rotation.y = Math.PI;
@@ -388,9 +385,13 @@ function buildAvatar(gltf, isMirror) {
 
   group.updateMatrixWorld(true);
 
-  // голова
+  // голова: позиция (world) и bind-ориентация (world)
   const headBone = bones['head_03'] || findByName(model, /head/i);
-  if (headBone) headBone.getWorldPosition(headLocal);
+  const headBindQ = new THREE.Quaternion();
+  if (headBone) {
+    headBone.getWorldPosition(headLocal);
+    headBone.getWorldQuaternion(headBindQ);
+  }
 
   // пальцы
   const chain = (side, base) => {
@@ -407,7 +408,7 @@ function buildAvatar(gltf, isMirror) {
     fingerBones[side].push(chain(side, 'thumb'));
   }
 
-  return { group, bones, restQuats, fingerBones, headLocal: headLocal.clone() };
+  return { group, bones, restQuats, fingerBones, headLocal: headLocal.clone(), headBindQ: headBindQ.clone() };
 }
 
 function findByName(obj, re) {
@@ -432,10 +433,20 @@ async function loadAvatar() {
   bodyBaseY = playerAvatar.headLocal.y - HEAD_OFFSET.y;
   bodyPos.y = bodyBaseY;
 
+  // диагностика масштаба (проверяем, что модель ~1.5 м, а не гигантская)
+  const _dbg = new THREE.Box3().setFromObject(playerAvatar.group);
+  console.log('[Rilla] высота аватара:', (_dbg.max.y - _dbg.min.y).toFixed(2), 'м | голова на:', playerAvatar.headLocal.y.toFixed(2), 'м');
+
   worldRoot.add(playerAvatar.group);
 
   // зеркало — статичная зеркальная копия (без пофреймового ведения костей,
   // чтобы ничего не «растягивалось»). Отражаем через negative-scale.
+  mirrorAvatar.group.traverse(o => {
+    if (o.isMesh && o.material) {
+      const setSide = m => { m.side = THREE.DoubleSide; };
+      if (Array.isArray(o.material)) o.material.forEach(setSide); else setSide(o.material);
+    }
+  });
   const mg = new THREE.Group();
   mg.name = 'mirror';
   mg.position.set(2*MIRROR_X, 0, 0);
@@ -515,8 +526,7 @@ function makeArmIK(shoulder, upper, lower, hand, poleLocal, natural) {
     const foreWorldQ = new THREE.Quaternion().multiplyQuaternions(qFore, upperBindQ);
     setBoneWorldQuat(upper, foreWorldQ);
 
-    // кисть точно в цель
-    setBoneWorldPos(hand, targetWorld);
+    // кисть — ТОЛЬКО поворот (позиция задаётся длиной руки, не трогаем)
     if (handWorldQuat) setBoneWorldQuat(hand, handWorldQuat);
   };
 }
@@ -531,6 +541,7 @@ const handState = {
        grip:0, trigger:0, rcPrev:false, ik:null },
 };
 let headYaw = 0, headPitch = 0;
+let headDeltaQ = null;   // поправка: headBindQ * cameraStartQuat^-1 (для поворота головы)
 
 // строим IK после загрузки аватара (нужны bind-позы)
 function buildIK() {
@@ -542,8 +553,8 @@ function buildIK() {
     const natural = { upper: up.clone().sub(sp).normalize(), lower: lp.clone().sub(up).normalize() };
     return makeArmIK(s, u, l, h, pole, natural);
   };
-  if (b['shoulder_L_06']) handState.L.ik = mk(b['shoulder_L_06'], b['upperarm_L_07'], b['lowerarm_L_08'], b['hand_L_09'], new THREE.Vector3(0,-0.5,-0.3));
-  if (b['shoulder_R_019']) handState.R.ik = mk(b['shoulder_R_019'], b['upperarm_R_020'], b['lowerarm_R_021'], b['hand_R_022'], new THREE.Vector3(0,-0.5,-0.3));
+  if (b['shoulder_L_06']) handState.L.ik = mk(b['shoulder_L_06'], b['upperarm_L_07'], b['lowerarm_L_08'], b['hand_L_09'], new THREE.Vector3(0,-0.6,0.4));
+  if (b['shoulder_R_019']) handState.R.ik = mk(b['shoulder_R_019'], b['upperarm_R_020'], b['lowerarm_R_021'], b['hand_R_022'], new THREE.Vector3(0,-0.6,0.4));
 }
 
 // =====================================================================
@@ -587,25 +598,19 @@ function reflectQuat(q) {
   return new THREE.Quaternion().setFromEuler(e);
 }
 
-function updateAvatar(avatar, headWorld, headQuat, L, R, isMirror) {
+function updateAvatar(avatar, headWorld, headQuat, L, R) {
   const b = avatar.bones;
   const g = avatar.group;
 
-  // голова (с отражением для зеркала)
-  const hw = isMirror ? reflectPoint(headWorld) : headWorld.clone();
-  const hq = isMirror ? reflectQuat(headQuat) : headQuat;
-
-  // тело: ступни стоят на полу, голова — на hw
-  g.position.copy(hw).sub(avatar.headLocal);
+  // тело: ступни на полу, голова — на headWorld (группа двигается, кости НЕ трогаем позицией)
+  g.position.copy(headWorld).sub(avatar.headLocal);
   g.updateMatrixWorld(true);
 
+  // голова — только поворот
   const hb = b['head_03'];
-  if (hb) {
-    setBoneWorldPos(hb, hw);
-    if (hq) setBoneWorldQuat(hb, hq);
-  }
+  if (hb && headQuat) setBoneWorldQuat(hb, headQuat);
 
-  // руки
+  // руки — только поворот (IK)
   for (const side of ['L','R']) {
     const st = side==='L'?L:R;
     const handBone = side==='L' ? b['hand_L_09'] : b['hand_R_022'];
@@ -615,16 +620,14 @@ function updateAvatar(avatar, headWorld, headQuat, L, R, isMirror) {
     applyFingers(avatar, side, st.grip, st.trigger);
     if (!st.present) continue;
 
-    // позиция руки в world-local (минус сдвиг рига)
-    let target = st.pos.clone().sub(worldRoot.position);
-    let tq = st.quat.clone();
-    if (isMirror) { target = reflectPoint(target); tq = reflectQuat(tq); }
+    // цель руки — в КОМНАТНЫХ координатах (как getWorldPosition костей),
+    // иначе (world-local) цель уезжает вместе с движением → рука растягивается.
+    const target = st.pos.clone();
+    const tq = st.quat.clone();
 
-    // IK только для игрока; зеркалу — прямое ведение кисти
-    if (!isMirror && handState[side].ik) {
+    if (handState[side].ik) {
       handState[side].ik(target, tq);
     } else {
-      setBoneWorldPos(handBone, target);
       setBoneWorldQuat(handBone, tq);
     }
   }
@@ -743,8 +746,13 @@ function onXRFrame(time, frame) {
 
   // --- аватар ---
   if (playerAvatar) {
+    // поворот головы относительно bind-позы (ловит стартовую ориентацию камеры один раз)
+    if (!headDeltaQ) {
+      headDeltaQ = playerAvatar.headBindQ.clone().multiply(camera.quaternion.clone().invert());
+    }
     const headWorld = bodyPos.clone().add(HEAD_OFFSET);
-    updateAvatar(playerAvatar, headWorld, camera.quaternion, handState.L, handState.R, false);
+    const headQuat = headDeltaQ.clone().multiply(camera.quaternion);
+    updateAvatar(playerAvatar, headWorld, headQuat, handState.L, handState.R);
   }
 
   renderer.render(scene, camera);
@@ -813,6 +821,7 @@ renderer.xr.addEventListener('sessionstart', () => {
   // сброс физики при входе
   bodyPos.set(0, bodyBaseY, 0); bodyVel.set(0,0,0);
   walkOffset.set(0, 0);
+  headDeltaQ = null;
   lastTime = 0;
 });
 renderer.xr.addEventListener('sessionend', () => {
