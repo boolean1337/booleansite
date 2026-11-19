@@ -81,17 +81,18 @@ const GLB_B64 = "Z2xURgIAAADQHi0AqDQAAEpTT057ImFjY2Vzc29ycyI6W3siYnVmZmVyVmlldyI
 //  НАСТРОЙКИ (можно крутить)
 // =====================================================================
 const CONFIG = {
-  gravity: -11.0,          // чуть сильнее земного — бодрее падение
+  gravity: -11.0,          // гравитация
   playerRadius: 0.30,      // радиус "тела" (капсулы-шара)
   handRadius: 0.09,        // радиус коллайдера руки
   eyeToChest: 0.55,        // глаза выше центра тела
-  maxSpeed: 11.0,          // потолок скорости
-  pushGain: 1.55,          // насколько сильно рука толкает тело
-  pushDeadband: 0.45,      // игнор медленных движений руки (m/s)
-  grabStiffness: 3.5,      // жёсткость «захвата» при грипе (импульс на метр смещения)
-  brake: 6.0,              // сила "тормоза" при зажатом грипе
+  maxSpeed: 12.0,          // потолок скорости
+  maxArmLength: 1.0,       // макс. длина руки от головы (кламп, как в Gorilla Tag)
+  velocityLimit: 1.2,      // порог скорости, после которого срабатывает прыжок
+  jumpMultiplier: 1.35,    // множитель прыжка
+  maxJumpSpeed: 9.0,       // потолок скорости прыжка
+  velocityHistorySize: 8,  // окно сглаживания скорости
   groundFriction: 8.0,     // трение об пол
-  airDamping: 0.4,         // сопротивление воздуха (1/s)
+  airDamping: 0.3,         // сопротивление воздуха (1/s)
   followGround: 12.0,      // насколько тело следует за головой (на земле)
   followAir: 0.0,          // в полёте НЕ притягиваем (иначе «магнит»)
   modelHeight: 1.25,       // целевой рост аватара (м) — модель изначально ~1.07м
@@ -249,6 +250,15 @@ const bodyVel = new THREE.Vector3();
 let grounded = false;
 const walkOffset = new THREE.Vector2(0, 0);    // сдвиг головы от тела по горизонтали (блокируется на земле)
 let bodyBaseY = 0.9;                            // высота тела, считается из пропорций модели
+
+// --- состояние физики в стиле Gorilla Tag ---
+const lastHandPos = { L: new THREE.Vector3(), R: new THREE.Vector3() };
+const handPosInit = { L: false, R: false };
+const denormVel = new THREE.Vector3();          // сглаженная (усреднённая) скорость
+const velocityHistory = [];
+let velocityIndex = 0;
+const lastBodyPos = new THREE.Vector3();
+const _pushL = new THREE.Vector3(), _pushR = new THREE.Vector3();
 
 function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
 
@@ -477,8 +487,9 @@ function setBoneWorldPos(bone, worldPos) {
 function setBoneWorldQuat(bone, worldQuat) {
   if (!bone.parent) { bone.quaternion.copy(worldQuat); return; }
   bone.parent.updateWorldMatrix(true, false);
-  bone.parent.getWorldQuaternion(_q1);
-  bone.quaternion.copy(_q1.invert().multiply(worldQuat));
+  const pq = new THREE.Quaternion();
+  bone.parent.getWorldQuaternion(pq);
+  bone.quaternion.copy(pq.invert().multiply(worldQuat));
 }
 
 // Двух-костный IK для руки. Работает в мировых координатах, учитывая поворот тела (yaw).
@@ -610,10 +621,12 @@ function updateAvatar(avatar, headWorld, headQuat, L, R) {
   const b = avatar.bones;
   const g = avatar.group;
 
-  // позиция тела + поворот туловища по yaw головы
+  // позиция тела + поворот туловища (yaw полностью, pitch/roll частично — торс наклоняется)
   g.position.copy(headWorld).sub(avatar.headLocal);
   _euler.setFromQuaternion(headQuat, 'YXZ');
   g.rotation.y = _euler.y;
+  g.rotation.x = _euler.x * 0.5;   // половина наклона головы — на торс
+  g.rotation.z = _euler.z * 0.3;   // часть крена — на торс
   g.updateMatrixWorld(true);
 
   // голова — только поворот (yaw уже учтён туловищем, голова берёт pitch/roll)
@@ -633,7 +646,9 @@ function updateAvatar(avatar, headWorld, headQuat, L, R) {
     // цель руки — в КОМНАТНЫХ координатах (как getWorldPosition костей)
     const target = st.pos.clone();
     // ориентация кисти: дельта от стартовой ориентации контроллера (без инверсии)
-    const tq = st.handDeltaQ ? _q1.copy(st.handDeltaQ).multiply(st.quat) : st.quat.clone();
+    const tq = new THREE.Quaternion();
+    if (st.handDeltaQ) tq.copy(st.handDeltaQ).multiply(st.quat);
+    else tq.copy(st.quat);
 
     if (handState[side].ik) {
       handState[side].ik(target, tq);
@@ -644,60 +659,81 @@ function updateAvatar(avatar, headWorld, headQuat, L, R) {
 }
 
 // =====================================================================
-//  ЛОКОМОШЕН (arm-based)
+//  ФИЗИКА В СТИЛЕ GORILLA TAG (позиционный толчок + вывод скорости + прыжок)
 // =====================================================================
-function doLocomotion(dt) {
+function stepPhysics(dt) {
+  const head = camera.position;
+  let leftColliding = false, rightColliding = false;
+  _pushL.set(0,0,0); _pushR.set(0,0,0);
+
+  // --- 1. руки: позиционный толчок (рука «прилипает», тело двигается противоположно) ---
   for (const side of ['L','R']) {
     const st = handState[side];
-    if (!st.present) { st.grabbing = false; continue; }
+    const last = lastHandPos[side];
+    if (!st.present) continue;
 
-    // скорость руки в room-space (реальное движение руки)
-    st.vel.copy(st.pos).sub(st.prev).divideScalar(Math.max(dt,1e-5));
+    // позиция руки (room), кламп по maxArmLength от головы — руки не бесконечные
+    const cur = _v1.copy(st.pos);
+    const toHand = _v2.copy(cur).sub(head);
+    if (toHand.length() > CONFIG.maxArmLength) {
+      cur.copy(head).addScaledVector(toHand.normalize(), CONFIG.maxArmLength);
+    }
+    if (!handPosInit[side]) { last.copy(cur); handPosInit[side] = true; continue; }
 
-    // контакт руки с поверхностью (в мировых координатах сцены)
-    const worldHand = _v2.copy(st.pos).sub(worldRoot.position);
-    const touching = sphereTouches(worldHand, CONFIG.handRadius);
-
-    if (st.grip > 0.3 && touching) {
-      // ЗАХВАТ: замораживаем точку опоры (в room-space — реальная рука)
-      if (!st.grabbing) { st.grabbing = true; st.anchor.copy(st.pos); }
-      // толчок от точки опоры: двинул руку дальше → импульс в противоположную сторону
-      const delta = _v3.copy(st.pos).sub(st.anchor);
-      const dl = delta.length();
-      if (dl > CONFIG.pushDeadband) {
-        bodyVel.addScaledVector(delta, -CONFIG.grabStiffness);
-      }
-      // висение: гасим падение и горизонталь (держимся)
-      if (bodyVel.y < 0) bodyVel.y *= Math.max(0, 1 - CONFIG.brake*dt);
-      const br = Math.max(0, 1 - CONFIG.brake*dt);
-      bodyVel.x *= br; bodyVel.z *= br;
+    // контакт руки с поверхностью (в world-local)
+    const worldHand = _v3.copy(cur).sub(worldRoot.position);
+    if (sphereTouches(worldHand, CONFIG.handRadius)) {
+      const push = _v2.copy(last).sub(cur); // тело двигается противоположно движению руки
+      if (side === 'L') { _pushL.copy(push); leftColliding = true; }
+      else { _pushR.copy(push); rightColliding = true; }
+      // last остаётся «прилипшим»
     } else {
-      st.grabbing = false;
-      // обычный толчок от контакта (без грипа): движение руки → импульс
-      if (touching) {
-        const sp = st.vel.length();
-        if (sp > CONFIG.pushDeadband) {
-          const gain = CONFIG.pushGain * clamp(sp/2, 0.5, 1.5);
-          bodyVel.addScaledVector(st.vel, -gain);
-        }
-      }
+      last.copy(cur);
     }
   }
-}
 
-function doBodyFollow(dt) {
-  // тело следует за головой по горизонтали, но с ФИКСИРОВАННЫМ сдвигом:
-  // на земле сдвиг заморожен (ходит за головой без «магнита» к центру),
-  // в полёте сдвиг обновляется (тело свободно улетает).
-  if (grounded) {
-    const tx = camera.position.x - walkOffset.x;
-    const tz = camera.position.z - walkOffset.y;
-    bodyVel.x += (tx - bodyPos.x) * CONFIG.followGround * dt;
-    bodyVel.z += (tz - bodyPos.z) * CONFIG.followGround * dt;
+  // --- 2. кинематический толчок тела ---
+  if (leftColliding && rightColliding) bodyPos.addScaledVector(_pushL.add(_pushR), 0.5);
+  else bodyPos.add(_pushL.add(_pushR));
+
+  // --- 3. вывод скорости (сглаживание по окну) ---
+  const vel = _v1.copy(bodyPos).sub(lastBodyPos).divideScalar(Math.max(dt, 1e-5));
+  velocityIndex = (velocityIndex + 1) % CONFIG.velocityHistorySize;
+  if (!velocityHistory[velocityIndex]) velocityHistory[velocityIndex] = new THREE.Vector3();
+  const oldest = velocityHistory[velocityIndex];
+  denormVel.addScaledVector(_v2.copy(vel).sub(oldest), 1 / CONFIG.velocityHistorySize);
+  velocityHistory[velocityIndex].copy(vel);
+  lastBodyPos.copy(bodyPos);
+
+  // --- 4. прыжок / висение ---
+  const anyTouching = leftColliding || rightColliding;
+  if (anyTouching) {
+    bodyVel.set(0,0,0); // висение (гасим скорость, пока держимся)
+    if (denormVel.length() > CONFIG.velocityLimit) {
+      bodyVel.copy(denormVel).multiplyScalar(CONFIG.jumpMultiplier);
+      if (bodyVel.length() > CONFIG.maxJumpSpeed) bodyVel.setLength(CONFIG.maxJumpSpeed);
+    }
   } else {
-    walkOffset.x = camera.position.x - bodyPos.x;
-    walkOffset.y = camera.position.z - bodyPos.z;
+    bodyVel.y += CONFIG.gravity * dt;
   }
+
+  // --- 5. следование за головой (ходьба), с фиксированным сдвигом ---
+  if (grounded) {
+    bodyVel.x += (head.x - walkOffset.x - bodyPos.x) * CONFIG.followGround * dt;
+    bodyVel.z += (head.z - walkOffset.y - bodyPos.z) * CONFIG.followGround * dt;
+  } else {
+    walkOffset.x = head.x - bodyPos.x;
+    walkOffset.y = head.z - bodyPos.z;
+  }
+
+  // --- 6. воздух + лимит скорости ---
+  const air = Math.max(0, 1 - CONFIG.airDamping * dt);
+  bodyVel.x *= air; bodyVel.z *= air;
+  if (bodyVel.length() > CONFIG.maxSpeed) bodyVel.setLength(CONFIG.maxSpeed);
+
+  // --- 7. интеграция + коллизии ---
+  bodyPos.addScaledVector(bodyVel, dt);
+  grounded = collideBody();
 }
 
 function recenter() {
@@ -743,6 +779,16 @@ function onXRFrame(time, frame) {
       st.present = true;
       st.pos.set(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
       st.quat.set(pose.transform.orientation.x, pose.transform.orientation.y, pose.transform.orientation.z, pose.transform.orientation.w);
+      // кламп длины руки от головы (как Gorilla Tag maxArmLength — руки не бесконечные)
+      const hp = camera.position;
+      const dx = st.pos.x - hp.x, dy = st.pos.y - hp.y, dz = st.pos.z - hp.z;
+      const dl = Math.hypot(dx, dy, dz);
+      if (dl > CONFIG.maxArmLength) {
+        const s = CONFIG.maxArmLength / dl;
+        st.pos.x = hp.x + dx * s;
+        st.pos.y = hp.y + dy * s;
+        st.pos.z = hp.z + dz * s;
+      }
       // дельта ориентации кисти (ловим стартовую ориентацию контроллера один раз)
       if (!st.handDeltaQ && playerAvatar && playerAvatar.handBindQ && playerAvatar.handBindQ[side]) {
         st.handDeltaQ = playerAvatar.handBindQ[side].clone().multiply(st.quat.clone().invert());
@@ -761,21 +807,20 @@ function onXRFrame(time, frame) {
   });
 
   // --- направление взгляда (для выноса камеры вперёд, чтобы не видеть голову изнутри) ---
-  camera.getWorldDirection(_v3);
-  _v3.y = 0;
-  if (_v3.lengthSq() < 1e-6) _v3.set(0, 0, -1);
-  _v3.normalize();
+  const fwd = new THREE.Vector3();
+  camera.getWorldDirection(fwd);
+  fwd.y = 0;
+  if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+  fwd.normalize();
 
   // --- риг (до физики, для корректного контакта рук) ---
-  worldRoot.position.copy(headPos).sub(bodyPos).sub(HEAD_OFFSET).addScaledVector(_v3, -CONFIG.cameraForward);
+  worldRoot.position.copy(headPos).sub(bodyPos).sub(HEAD_OFFSET).addScaledVector(fwd, -CONFIG.cameraForward);
 
-  // --- физика + локомошен ---
-  doLocomotion(dt);
-  doBodyFollow(dt);
-  physicsStep(dt);
+  // --- физика (Gorilla Tag style) ---
+  stepPhysics(dt);
 
   // --- риг (после физики, для рендера) ---
-  worldRoot.position.copy(headPos).sub(bodyPos).sub(HEAD_OFFSET).addScaledVector(_v3, -CONFIG.cameraForward);
+  worldRoot.position.copy(headPos).sub(bodyPos).sub(HEAD_OFFSET).addScaledVector(fwd, -CONFIG.cameraForward);
 
   // --- аватар ---
   if (playerAvatar) {
@@ -850,6 +895,10 @@ renderer.xr.addEventListener('sessionstart', () => {
   bodyPos.set(0, bodyBaseY, 0); bodyVel.set(0,0,0);
   walkOffset.set(0, 0);
   handState.L.handDeltaQ = null; handState.R.handDeltaQ = null;
+  handPosInit.L = false; handPosInit.R = false;
+  denormVel.set(0,0,0);
+  velocityHistory.length = 0;
+  lastBodyPos.copy(bodyPos);
   lastTime = 0;
 });
 renderer.xr.addEventListener('sessionend', () => {
