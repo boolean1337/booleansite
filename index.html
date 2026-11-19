@@ -88,12 +88,14 @@ const CONFIG = {
   maxSpeed: 11.0,          // потолок скорости
   pushGain: 1.55,          // насколько сильно рука толкает тело
   pushDeadband: 0.45,      // игнор медленных движений руки (m/s)
+  grabStiffness: 3.5,      // жёсткость «захвата» при грипе (импульс на метр смещения)
   brake: 6.0,              // сила "тормоза" при зажатом грипе
   groundFriction: 8.0,     // трение об пол
   airDamping: 0.4,         // сопротивление воздуха (1/s)
   followGround: 12.0,      // насколько тело следует за головой (на земле)
   followAir: 0.0,          // в полёте НЕ притягиваем (иначе «магнит»)
-  modelHeight: 1.5,        // целевой рост аватара (м) — модель изначально ~1.07м
+  modelHeight: 1.25,       // целевой рост аватара (м) — модель изначально ~1.07м
+  cameraForward: 0.22,     // вынос камеры вперёд, чтобы не видеть свою голову изнутри (м)
 };
 
 // =====================================================================
@@ -408,7 +410,12 @@ function buildAvatar(gltf, isMirror) {
     fingerBones[side].push(chain(side, 'thumb'));
   }
 
-  return { group, bones, restQuats, fingerBones, headLocal: headLocal.clone(), headBindQ: headBindQ.clone() };
+  // bind-ориентации кистей (для корректного поворота запястий без инверсии)
+  const handBindQ = {};
+  if (bones['hand_L_09']) handBindQ.L = new THREE.Quaternion(); bones['hand_L_09'].getWorldQuaternion(handBindQ.L);
+  if (bones['hand_R_022']) handBindQ.R = new THREE.Quaternion(); bones['hand_R_022'].getWorldQuaternion(handBindQ.R);
+
+  return { group, bones, restQuats, fingerBones, headLocal: headLocal.clone(), headBindQ: headBindQ.clone(), handBindQ };
 }
 
 function findByName(obj, re) {
@@ -474,9 +481,8 @@ function setBoneWorldQuat(bone, worldQuat) {
   bone.quaternion.copy(_q1.invert().multiply(worldQuat));
 }
 
-// Двух-костный IK для руки. Захватывает bind-ориентации заранее.
-function makeArmIK(shoulder, upper, lower, hand, poleLocal, natural) {
-  // natural: {upper: Vector3(мировая dir shoulder->elbow), lower: Vector3(мировая dir elbow->wrist)}
+// Двух-костный IK для руки. Работает в мировых координатах, учитывая поворот тела (yaw).
+function makeArmIK(shoulder, upper, lower, hand, poleLocal, natural, groupRef) {
   // bind-МИРОВЫЕ кватернионы (нужны для корректного поворота)
   shoulder.updateWorldMatrix(true, true);
   const shoulderBindQ = new THREE.Quaternion(); shoulder.getWorldQuaternion(shoulderBindQ);
@@ -489,10 +495,14 @@ function makeArmIK(shoulder, upper, lower, hand, poleLocal, natural) {
   const b = lPos.distanceTo(uPos);
 
   return function solve(targetWorld, handWorldQuat) {
-    // плечо считаем фиксированным (спина не двигается)
+    // плечо в текущих мировых координатах
     const S = _v1; shoulder.getWorldPosition(S);
 
-    // зажимаем цель в досягаемость руки — иначе рука растянется
+    // текущий yaw тела (группа аватара крутится вокруг Y)
+    groupRef.updateWorldMatrix(true, false);
+    const gq = _q2; groupRef.getWorldQuaternion(gq);
+
+    // зажимаем цель в досягаемость руки
     const reach = a + b;
     const toTarget = _v3.copy(targetWorld).sub(S);
     if (toTarget.length() > reach) targetWorld = S.clone().addScaledVector(toTarget.normalize(), reach);
@@ -502,31 +512,34 @@ function makeArmIK(shoulder, upper, lower, hand, poleLocal, natural) {
     d = clamp(d, Math.abs(a-b)+1e-4, a+b-1e-4);
     toT.normalize();
 
-    // pole в мировых координатах
-    const toPoleV = new THREE.Vector3().copy(S).add(poleLocal).sub(S); // == poleLocal
+    // pole (направление локтя) поворачиваем вместе с телом
+    const toPoleV = new THREE.Vector3().copy(poleLocal).applyQuaternion(gq);
     let axis = new THREE.Vector3().crossVectors(toT, toPoleV);
     if (axis.lengthSq() < 1e-8) axis = new THREE.Vector3(0,1,0);
     axis.normalize();
 
     const cosA = clamp((a*a + d*d - b*b)/(2*a*d), -1, 1);
     const ang = Math.acos(cosA);
-    // направление локтя (выбираем сторону к полю)
     const elbowDir = new THREE.Vector3().copy(toT).applyAxisAngle(axis, -ang);
     if (elbowDir.dot(toPoleV) < 0) elbowDir.copy(toT).applyAxisAngle(axis, ang);
 
-    // верхнее плечо: natural.upper -> elbowDir
-    const qUpper = new THREE.Quaternion().setFromUnitVectors(natural.upper, elbowDir);
-    const upperWorldQ = new THREE.Quaternion().multiplyQuaternions(qUpper, shoulderBindQ);
+    // верхнее плечо: natural.upper (повёрнутый на yaw) -> elbowDir
+    const natUp = new THREE.Vector3().copy(natural.upper).applyQuaternion(gq);
+    const qUpper = new THREE.Quaternion().setFromUnitVectors(natUp, elbowDir);
+    const shoulderBindQW = new THREE.Quaternion().copy(shoulderBindQ).premultiply(gq);
+    const upperWorldQ = new THREE.Quaternion().multiplyQuaternions(qUpper, shoulderBindQW);
     setBoneWorldQuat(shoulder, upperWorldQ);
 
     // предплечье: elbow -> target
     const elbowW = new THREE.Vector3().copy(S).addScaledVector(elbowDir, a);
     const foreDir = new THREE.Vector3().copy(targetWorld).sub(elbowW).normalize();
-    const qFore = new THREE.Quaternion().setFromUnitVectors(natural.lower, foreDir);
-    const foreWorldQ = new THREE.Quaternion().multiplyQuaternions(qFore, upperBindQ);
+    const natLow = new THREE.Vector3().copy(natural.lower).applyQuaternion(gq);
+    const qFore = new THREE.Quaternion().setFromUnitVectors(natLow, foreDir);
+    const upperBindQW = new THREE.Quaternion().copy(upperBindQ).premultiply(gq);
+    const foreWorldQ = new THREE.Quaternion().multiplyQuaternions(qFore, upperBindQW);
     setBoneWorldQuat(upper, foreWorldQ);
 
-    // кисть — ТОЛЬКО поворот (позиция задаётся длиной руки, не трогаем)
+    // кисть — только поворот
     if (handWorldQuat) setBoneWorldQuat(hand, handWorldQuat);
   };
 }
@@ -536,22 +549,24 @@ function makeArmIK(shoulder, upper, lower, hand, poleLocal, natural) {
 // =====================================================================
 const handState = {
   L: { present:false, pos:new THREE.Vector3(), quat:new THREE.Quaternion(), prev:new THREE.Vector3(), vel:new THREE.Vector3(),
-       grip:0, trigger:0, rcPrev:false, ik:null },
+       anchor:new THREE.Vector3(), grabbing:false, grip:0, trigger:0, btn:0, rcPrev:false, handDeltaQ:null, ik:null },
   R: { present:false, pos:new THREE.Vector3(), quat:new THREE.Quaternion(), prev:new THREE.Vector3(), vel:new THREE.Vector3(),
-       grip:0, trigger:0, rcPrev:false, ik:null },
+       anchor:new THREE.Vector3(), grabbing:false, grip:0, trigger:0, btn:0, rcPrev:false, handDeltaQ:null, ik:null },
 };
+const _euler = new THREE.Euler();
 let headYaw = 0, headPitch = 0;
 let headDeltaQ = null;   // поправка: headBindQ * cameraStartQuat^-1 (для поворота головы)
 
 // строим IK после загрузки аватара (нужны bind-позы)
 function buildIK() {
   const b = playerAvatar.bones;
+  const g = playerAvatar.group;
   const mk = (s,u,l,h, pole) => {
     const up = new THREE.Vector3(); u.getWorldPosition(up);
     const lp = new THREE.Vector3(); l.getWorldPosition(lp);
     const sp = new THREE.Vector3(); s.getWorldPosition(sp);
     const natural = { upper: up.clone().sub(sp).normalize(), lower: lp.clone().sub(up).normalize() };
-    return makeArmIK(s, u, l, h, pole, natural);
+    return makeArmIK(s, u, l, h, pole, natural, g);
   };
   if (b['shoulder_L_06']) handState.L.ik = mk(b['shoulder_L_06'], b['upperarm_L_07'], b['lowerarm_L_08'], b['hand_L_09'], new THREE.Vector3(0,-0.6,0.4));
   if (b['shoulder_R_019']) handState.R.ik = mk(b['shoulder_R_019'], b['upperarm_R_020'], b['lowerarm_R_021'], b['hand_R_022'], new THREE.Vector3(0,-0.6,0.4));
@@ -563,50 +578,45 @@ function buildIK() {
 const HEAD_OFFSET = new THREE.Vector3(0, CONFIG.eyeToChest, 0);
 let headLocalVec = new THREE.Vector3(0, 1.2, 0);
 
-function applyFingers(avatar, side, grip, trigger) {
-  const curl = clamp(Math.max(grip, trigger*0.6), 0, 1);
-  if (curl <= 0.001) {
-    // сброс в rest-позу
-    for (const chain of avatar.fingerBones[side])
-      for (const b of chain) if (b) b.quaternion.copy(avatar.restQuats[b.name]);
-    return;
-  }
+function curlFinger(chain, amount, restQuats) {
   const qx = (a) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), a);
-  const chains = avatar.fingerBones[side];
-  // index, pinkie — сгиб вокруг X
-  for (let ci=0; ci<2; ci++) {
-    const chain = chains[ci];
-    for (let i=0;i<chain.length;i++) {
-      const b = chain[i]; if (!b) continue;
-      const ang = curl * (1.0 + i*0.25) * 1.6;
-      b.quaternion.copy(avatar.restQuats[b.name]).multiply(qx(ang));
-    }
+  for (let i=0;i<chain.length;i++) {
+    const b = chain[i]; if (!b) continue;
+    if (amount <= 0.001) b.quaternion.copy(restQuats[b.name]);
+    else b.quaternion.copy(restQuats[b.name]).multiply(qx(amount * (1.0 + i*0.25) * 1.6));
   }
-  // thumb — сгиб вокруг X + доворот Z
-  const th = chains[2];
-  for (let i=0;i<th.length;i++) {
-    const b = th[i]; if (!b) continue;
-    const q = qx(curl*0.9).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), curl*0.5));
-    b.quaternion.copy(avatar.restQuats[b.name]).multiply(q);
+}
+function curlThumb(chain, amount, restQuats) {
+  for (let i=0;i<chain.length;i++) {
+    const b = chain[i]; if (!b) continue;
+    if (amount <= 0.001) b.quaternion.copy(restQuats[b.name]);
+    else {
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), amount*0.9)
+        .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), amount*0.5));
+      b.quaternion.copy(restQuats[b.name]).multiply(q);
+    }
   }
 }
 
-function reflectPoint(v) { return new THREE.Vector3(2*MIRROR_X - v.x, v.y, v.z); }
-function reflectQuat(q) {
-  const e = new THREE.Euler().setFromQuaternion(q, 'YXZ');
-  e.y = -e.y; e.z = -e.z;
-  return new THREE.Quaternion().setFromEuler(e);
+// каждый палец — от своей кнопки: trigger → указательный, grip → мизинец(+безым.), btn → большой
+function applyFingers(avatar, side, indexV, pinkieV, thumbV) {
+  const chains = avatar.fingerBones[side];
+  curlFinger(chains[0], clamp(indexV,0,1), avatar.restQuats);
+  curlFinger(chains[1], clamp(pinkieV,0,1), avatar.restQuats);
+  curlThumb(chains[2], clamp(thumbV,0,1), avatar.restQuats);
 }
 
 function updateAvatar(avatar, headWorld, headQuat, L, R) {
   const b = avatar.bones;
   const g = avatar.group;
 
-  // тело: ступни на полу, голова — на headWorld (группа двигается, кости НЕ трогаем позицией)
+  // позиция тела + поворот туловища по yaw головы
   g.position.copy(headWorld).sub(avatar.headLocal);
+  _euler.setFromQuaternion(headQuat, 'YXZ');
+  g.rotation.y = _euler.y;
   g.updateMatrixWorld(true);
 
-  // голова — только поворот
+  // голова — только поворот (yaw уже учтён туловищем, голова берёт pitch/roll)
   const hb = b['head_03'];
   if (hb && headQuat) setBoneWorldQuat(hb, headQuat);
 
@@ -617,13 +627,13 @@ function updateAvatar(avatar, headWorld, headQuat, L, R) {
     const shoulder = side==='L' ? b['shoulder_L_06'] : b['shoulder_R_019'];
     if (!handBone || !shoulder) continue;
 
-    applyFingers(avatar, side, st.grip, st.trigger);
+    applyFingers(avatar, side, st.trigger, st.grip, st.btn);
     if (!st.present) continue;
 
-    // цель руки — в КОМНАТНЫХ координатах (как getWorldPosition костей),
-    // иначе (world-local) цель уезжает вместе с движением → рука растягивается.
+    // цель руки — в КОМНАТНЫХ координатах (как getWorldPosition костей)
     const target = st.pos.clone();
-    const tq = st.quat.clone();
+    // ориентация кисти: дельта от стартовой ориентации контроллера (без инверсии)
+    const tq = st.handDeltaQ ? _q1.copy(st.handDeltaQ).multiply(st.quat) : st.quat.clone();
 
     if (handState[side].ik) {
       handState[side].ik(target, tq);
@@ -639,24 +649,37 @@ function updateAvatar(avatar, headWorld, headQuat, L, R) {
 function doLocomotion(dt) {
   for (const side of ['L','R']) {
     const st = handState[side];
-    if (!st.present) continue;
+    if (!st.present) { st.grabbing = false; continue; }
 
     // скорость руки в room-space (реальное движение руки)
     st.vel.copy(st.pos).sub(st.prev).divideScalar(Math.max(dt,1e-5));
 
     // контакт руки с поверхностью (в мировых координатах сцены)
     const worldHand = _v2.copy(st.pos).sub(worldRoot.position);
-    if (sphereTouches(worldHand, CONFIG.handRadius)) {
-      const sp = st.vel.length();
-      if (sp > CONFIG.pushDeadband) {
-        // толчок противоположен движению руки
-        const gain = CONFIG.pushGain * clamp(sp/2, 0.5, 1.5);
-        bodyVel.addScaledVector(st.vel, -gain);
+    const touching = sphereTouches(worldHand, CONFIG.handRadius);
+
+    if (st.grip > 0.3 && touching) {
+      // ЗАХВАТ: замораживаем точку опоры (в room-space — реальная рука)
+      if (!st.grabbing) { st.grabbing = true; st.anchor.copy(st.pos); }
+      // толчок от точки опоры: двинул руку дальше → импульс в противоположную сторону
+      const delta = _v3.copy(st.pos).sub(st.anchor);
+      const dl = delta.length();
+      if (dl > CONFIG.pushDeadband) {
+        bodyVel.addScaledVector(delta, -CONFIG.grabStiffness);
       }
-      if (st.grip > 0.3) {
-        // грип = тормоз/висение
-        const br = Math.max(0, 1 - CONFIG.brake*st.grip*dt);
-        bodyVel.multiplyScalar(br);
+      // висение: гасим падение и горизонталь (держимся)
+      if (bodyVel.y < 0) bodyVel.y *= Math.max(0, 1 - CONFIG.brake*dt);
+      const br = Math.max(0, 1 - CONFIG.brake*dt);
+      bodyVel.x *= br; bodyVel.z *= br;
+    } else {
+      st.grabbing = false;
+      // обычный толчок от контакта (без грипа): движение руки → импульс
+      if (touching) {
+        const sp = st.vel.length();
+        if (sp > CONFIG.pushDeadband) {
+          const gain = CONFIG.pushGain * clamp(sp/2, 0.5, 1.5);
+          bodyVel.addScaledVector(st.vel, -gain);
+        }
       }
     }
   }
@@ -706,7 +729,7 @@ function onXRFrame(time, frame) {
     const st = handState[side];
     st.prev.copy(st.pos);
     st.present = false;
-    st.grip = 0; st.trigger = 0;
+    st.grip = 0; st.trigger = 0; st.btn = 0;
   }
 
   session.inputSources.forEach(src => {
@@ -720,12 +743,16 @@ function onXRFrame(time, frame) {
       st.present = true;
       st.pos.set(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
       st.quat.set(pose.transform.orientation.x, pose.transform.orientation.y, pose.transform.orientation.z, pose.transform.orientation.w);
+      // дельта ориентации кисти (ловим стартовую ориентацию контроллера один раз)
+      if (!st.handDeltaQ && playerAvatar && playerAvatar.handBindQ && playerAvatar.handBindQ[side]) {
+        st.handDeltaQ = playerAvatar.handBindQ[side].clone().multiply(st.quat.clone().invert());
+      }
     }
     if (src.gamepad) {
       const gp = src.gamepad;
-      st.trigger = gp.buttons[0] ? gp.buttons[0].value : 0;
-      st.grip   = gp.buttons[1] ? gp.buttons[1].value : 0;
-      if (st.grip === 0) st.grip = gp.buttons[2] ? gp.buttons[2].value : 0; // запасной squeeze
+      st.trigger = gp.buttons[0] ? gp.buttons[0].value : 0;   // указательный палец
+      st.grip    = gp.buttons[1] ? gp.buttons[1].value : 0;   // мизинец+безымянный
+      st.btn     = gp.buttons[2] ? gp.buttons[2].value : 0;   // A/X — большой палец
       // кнопка B/Y (buttons[3]) — рецентровка
       const rc = gp.buttons[3] ? !!gp.buttons[3].pressed : false;
       if (rc && !st.rcPrev) recenter();
@@ -733,8 +760,14 @@ function onXRFrame(time, frame) {
     }
   });
 
+  // --- направление взгляда (для выноса камеры вперёд, чтобы не видеть голову изнутри) ---
+  camera.getWorldDirection(_v3);
+  _v3.y = 0;
+  if (_v3.lengthSq() < 1e-6) _v3.set(0, 0, -1);
+  _v3.normalize();
+
   // --- риг (до физики, для корректного контакта рук) ---
-  worldRoot.position.copy(headPos).sub(bodyPos).sub(HEAD_OFFSET);
+  worldRoot.position.copy(headPos).sub(bodyPos).sub(HEAD_OFFSET).addScaledVector(_v3, -CONFIG.cameraForward);
 
   // --- физика + локомошен ---
   doLocomotion(dt);
@@ -742,17 +775,12 @@ function onXRFrame(time, frame) {
   physicsStep(dt);
 
   // --- риг (после физики, для рендера) ---
-  worldRoot.position.copy(headPos).sub(bodyPos).sub(HEAD_OFFSET);
+  worldRoot.position.copy(headPos).sub(bodyPos).sub(HEAD_OFFSET).addScaledVector(_v3, -CONFIG.cameraForward);
 
   // --- аватар ---
   if (playerAvatar) {
-    // поворот головы относительно bind-позы (ловит стартовую ориентацию камеры один раз)
-    if (!headDeltaQ) {
-      headDeltaQ = playerAvatar.headBindQ.clone().multiply(camera.quaternion.clone().invert());
-    }
     const headWorld = bodyPos.clone().add(HEAD_OFFSET);
-    const headQuat = headDeltaQ.clone().multiply(camera.quaternion);
-    updateAvatar(playerAvatar, headWorld, headQuat, handState.L, handState.R);
+    updateAvatar(playerAvatar, headWorld, camera.quaternion, handState.L, handState.R);
   }
 
   renderer.render(scene, camera);
@@ -821,7 +849,7 @@ renderer.xr.addEventListener('sessionstart', () => {
   // сброс физики при входе
   bodyPos.set(0, bodyBaseY, 0); bodyVel.set(0,0,0);
   walkOffset.set(0, 0);
-  headDeltaQ = null;
+  handState.L.handDeltaQ = null; handState.R.handDeltaQ = null;
   lastTime = 0;
 });
 renderer.xr.addEventListener('sessionend', () => {
