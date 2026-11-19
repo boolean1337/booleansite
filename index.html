@@ -21,6 +21,7 @@ const ZERO=V3(), Y=V3(0,1,0), NEGZ=V3(0,0,-1), UP=V3(0,1,0);
 const tex=(w,h,f,px=true)=>{const c=document.createElement('canvas');c.width=w;c.height=h;f(c.getContext('2d'),w,h);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;if(px)t.magFilter=THREE.NearestFilter;return t};
 const rep=(t,x,y)=>{const c=t.clone();c.wrapS=c.wrapT=THREE.RepeatWrapping;c.repeat.set(x,y);c.needsUpdate=true;return c};
 const LM=(o)=>new THREE.MeshLambertMaterial(o);
+const M=(g,m,x=0,y=0,z=0)=>{const o=new THREE.Mesh(g,m);o.position.set(x,y,z);return o};
 let AC;function snd(f=200,d=.1,type='square',v=.08){try{AC=AC||new AudioContext();const o=AC.createOscillator(),g=AC.createGain();o.type=type;o.frequency.value=f;g.gain.value=v;g.gain.exponentialRampToValueAtTime(.001,AC.currentTime+d);o.connect(g).connect(AC.destination);o.start();o.stop(AC.currentTime+d)}catch(e){}}
 
 /* ===== ПРОЦЕДУРНЫЕ ТЕКСТУРЫ ===== */
@@ -36,28 +37,47 @@ const textTex=(s,col='#fff')=>tex(256,64,(g,w,h)=>{g.clearRect(0,0,w,h);g.fillSt
 /* ===== СЦЕНА / РЕНДЕР / XR ===== */
 const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);
 renderer.xr.enabled=true;renderer.xr.setReferenceSpaceType('local-floor');document.body.appendChild(renderer.domElement);document.body.appendChild(VRButton.createButton(renderer));
-const scene=new THREE.Scene();scene.background=new THREE.Color(0x9fb7d4);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x15181c);
 const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.03,120);
 const rig=new THREE.Group();rig.add(camera);scene.add(rig);rig.position.set(0,.5,3);camera.position.y=0;
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
-scene.add(new THREE.HemisphereLight(0xfff2e0,0x806c5a,1.1));const sun=new THREE.DirectionalLight(0xffffff,.5);sun.position.set(3,8,4);scene.add(sun);
-for(const [x,y,z,c,i,d] of [[0,3.5,0,0xffd9a0,.9,16],[22,2.6,0,0xfff0b0,1,24],[0,4,-14,0xffffff,.8,16]]){const l=new THREE.PointLight(c,i,d);l.position.set(x,y,z);scene.add(l)}
+scene.add(new THREE.HemisphereLight(0xffffff,0x606468,1.0));const sun=new THREE.DirectionalLight(0xffffff,.25);sun.position.set(3,8,4);scene.add(sun);
+for(const [x,y,z,c,i,d] of [[0,3.4,0,0xffffff,1,18],[22,2.6,0,0xfff0b0,1,24],[0,4,-14,0xffffff,.9,18]]){const l=new THREE.PointLight(c,i,d);l.position.set(x,y,z);scene.add(l)}
 
 /* ===== МИР И КОЛЛАЙДЕРЫ ===== */
 const colliders=[]; // AABB: стены, платформы, стол
 function B(x,y,z,w,h,d,mat,col=true){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);scene.add(m);if(col)colliders.push({min:V3(x-w/2,y-h/2,z-d/2),max:V3(x+w/2,y+h/2,z+d/2)});return m}
 const wallM=LM({color:0xe8dcc8}), accM=LM({color:0x4a7a9a}), woodM=LM({map:rep(woodTex,8,8)}), concM=LM({map:rep(concTex,6,6)}), carpM=LM({map:rep(carpetTex,20,20)}),
  yelM=LM({map:rep(paperTex,6,1)}), lightM=new THREE.MeshBasicMaterial({color:0xfffbe0}), plat=LM({color:0x9a6a4a}), stone=LM({color:0x77808a});
-// Главный зал (площадка)
-B(0,-.1,0,16,.2,16,woodM,false);
-B(-8,2,0,.4,4,16,wallM);B(0,2,8,16,.4,.4,wallM);B(-5,2,-8,6,4,.4,wallM);B(5,2,-8,6,4,.4,wallM);B(8,2,-5,.4,4,6,wallM);B(8,2,5,.4,4,6,wallM);
-B(0,2,8,16,4,.4,wallM);B(0,.02,0,5,.02,5,LM({color:0x8a3a3a}),false); // ковёр
-for(const [x,z] of [[-6,-6],[6,6],[-6,6],[6,-6]]){B(x,.25,z,.5,.5,.5,LM({color:0x6a4a2a}));const p=new THREE.Mesh(new THREE.SphereGeometry(.5,10,8),LM({color:0x3a9a4a}));p.position.set(x,.9,z);scene.add(p)}
-B(-3,.4,-3,1.5,.8,1.5,plat);B(3,.8,-2,1.2,1.6,1.2,plat);B(-4,1.2,5,1,2.4,1,stone);B(5,.5,4,2,1,1,plat);B(0,2.4,-7.6,3,.2,.6,accM,false);
-for(let i=0;i<6;i++)B(-7.8,.8+(i%3)*1.1,-6+i*2.4,.1,.1,1,accM,false);
+// Главный зал и тест-зона — бетонный склад (по референсу карты)
+const tileT=tex(128,128,(g,w,h)=>{g.fillStyle='#a2a5a8';g.fillRect(0,0,w,h);for(let i=0;i<400;i++){g.fillStyle=`rgba(0,0,0,${Math.random()*.08})`;g.fillRect(Math.random()*w,Math.random()*h,5,5)}g.strokeStyle='#6d7073';g.lineWidth=4;g.strokeRect(0,0,w,h)},false);
+const concT=tex(128,128,(g,w,h)=>{g.fillStyle='#868a8e';g.fillRect(0,0,w,h);for(let i=0;i<900;i++){g.fillStyle=Math.random()<.5?`rgba(0,0,0,${Math.random()*.1})`:`rgba(255,255,255,${Math.random()*.07})`;g.fillRect(Math.random()*w,Math.random()*h,6,6)}},false);
+const ceilT=tex(64,64,(g,w,h)=>{g.fillStyle='#d6d8da';g.fillRect(0,0,w,h);g.strokeStyle='#9a9c9e';g.lineWidth=2;g.strokeRect(0,0,w,h)},false);
+const hazT=tex(64,64,(g,w,h)=>{g.fillStyle='#e0b820';g.fillRect(0,0,w,h);g.fillStyle='#111';for(let i=-2;i<6;i++){g.beginPath();g.moveTo(i*16,0);g.lineTo(i*16+8,0);g.lineTo(i*16+72,64);g.lineTo(i*16+64,64);g.fill()}},false);
+const floorM=LM({map:rep(tileT,8,8)}),wallC=LM({map:rep(concT,4,1.5)}),ceilM=LM({map:rep(ceilT,8,8)}),hazM=LM({map:rep(hazT,4,1)}),tabM=LM({color:0xdcdcdc}),metal=LM({color:0x2f3237}),boardM=LM({color:0xb07a40}),lockM=LM({color:0x7fa6cf}),crateM=LM({color:0xb08850});
+function shelf(x,z,w=2.2){for(const sx of[-1,1])for(const sz of[-1,1])B(x+sx*w/2,.95,z+sz*.4,.08,1.9,.08,metal);for(const y of[.45,1.15,1.85])B(x,y,z,w,.05,.9,boardM)}
+const cone=(x,z)=>{const c=M(new THREE.ConeGeometry(.12,.4,8),LM({color:0xe8601a}),x,.2,z);scene.add(c)};
+// зал 16x16, потолок 4 м
+B(0,-.1,0,16,.2,16,floorM,false);B(0,4.1,0,16,.2,16,ceilM);
+B(-8,2,0,.4,4,16,wallC);B(0,2,8,16,4,.4,wallC);B(-5,2,-8,6,4,.4,wallC);B(5,2,-8,6,4,.4,wallC);B(8,2,-5,.4,4,6,wallC);B(8,2,5,.4,4,6,wallC);B(0,3.4,-8,4,1.2,.4,wallC);B(8,3.4,0,.4,1.2,4,wallC);
+for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++)B(i*5,3.97,j*5,1.4,.04,.7,lightM,false); // потолочные лампы
+B(0,.012,-7.2,4,.01,.8,hazM,false);B(7.2,.012,0,.8,.01,4,hazM,false);
+const sign=M(new THREE.PlaneGeometry(1.6,.6),new THREE.MeshBasicMaterial({map:tex(256,96,(g,w,h)=>{g.fillStyle='#0a6a2a';g.fillRect(0,0,w,h);g.fillStyle='#bfffcf';g.font='bold 56px sans-serif';g.textAlign='center';g.fillText('SHOP',w/2,68)},false)}),0,3.4,-7.78);scene.add(sign);
+// стол со скамейками, ящик и банка
+B(-2.5,.72,-2.5,2.6,.08,1,tabM);for(const sx of[-1,1])for(const sz of[-1,1])B(-2.5+sx*1.2,.36,-2.5+sz*.4,.06,.72,.06,metal,false);
+B(-2.5,.36,-3.4,2.6,.06,.35,tabM);B(-2.5,.36,-1.6,2.6,.06,.35,tabM);B(-2.5,.99,-2.5,.5,.45,.5,crateM);scene.add(M(new THREE.CylinderGeometry(.05,.05,.12,8),LM({color:0x2a6ae0}),-1.6,.82,-2.3));
+for(let i=0;i<4;i++)B(-3+i*.65,.95,7.7,.6,1.9,.5,lockM); // шкафчики
+shelf(-5.5,-5.2);shelf(5.5,3.2,2.4);
+B(6.5,.35,-6.5,.7,.7,.7,crateM);B(7.2,.35,-6.5,.7,.7,.7,crateM);B(6.8,1.05,-6.5,.7,.7,.7,crateM);B(-6.8,.35,6.5,.7,.7,.7,crateM);
+cone(5,-6.5);cone(-4,6.5);cone(1,5);
+B(3,.8,-2,1.2,1.6,1.2,metal);B(-4,1.2,5,1,2.4,1,metal);B(5,.5,-3.5,2,1,1,crateM);
+const vend=(c1,c2,t)=>tex(128,256,(g,w,h)=>{const gr=g.createLinearGradient(0,0,0,h);gr.addColorStop(0,c1);gr.addColorStop(1,c2);g.fillStyle=gr;g.fillRect(0,0,w,h);g.fillStyle='#fff';g.font='bold 22px sans-serif';g.textAlign='center';g.fillText(t,w/2,110);g.fillStyle='#111';g.fillRect(40,200,48,14)},false);
+for(const [z,c1,c2,t] of[[5.2,'#f0a020','#d86a10','ORANGE'],[6.3,'#2a6ae0','#103a9a','THE DRINK']]){B(7.35,.95,z,.9,1.9,.9,metal);const f=M(new THREE.PlaneGeometry(.8,1.8),new THREE.MeshBasicMaterial({map:vend(c1,c2,t)}),6.89,.95,z);f.rotation.y=-Math.PI/2;scene.add(f)}
 // Тестовая зона (3 NPC)
-B(0,-.1,-14,12.4,.2,12.4,concM,false);B(0,2.5,-20,12.4,5,.4,stone);B(-6,2.5,-14,.4,5,12,stone);B(6,2.5,-14,.4,5,12,stone);
-B(-3,.5,-12,2,1,2,plat);B(2,1,-17,2,2,2,plat);B(4,.4,-11,1.5,.8,1.5,plat);B(-4,1.5,-17,1,3,1,stone);B(0,.3,-15,1,.6,1,plat);
+B(0,-.1,-14,12.4,.2,12.4,floorM,false);B(0,5.1,-14,12.4,.2,12.4,ceilM);B(0,2.5,-20,12.4,5,.4,wallC);B(-6,2.5,-14,.4,5,12,wallC);B(6,2.5,-14,.4,5,12,wallC);
+for(const i of[-1,1])for(let j=0;j<2;j++)B(i*3,4.97,-11-j*5,1.4,.04,.7,lightM,false);
+B(0,.012,-8.6,4,.01,.8,hazM,false);shelf(-4.2,-19.2,2.6);shelf(4.2,-19.2,2.6);
+B(-3,.5,-12,2,1,2,crateM);B(2,1,-17,2,2,2,crateM);B(4,.4,-11,1.5,.8,1.5,crateM);B(0,.3,-15,1,.6,1,crateM);B(-4.6,1.5,-16,1,3,1,metal);cone(-1,-10);cone(3,-13);
 // Бэкрумс (жёлтые обои, ковёр, лампы)
 B(10,-.1,0,4,.2,4.4,carpM,false);B(22,-.1,0,20,.2,20,carpM,false);B(10,3.1,0,4,.2,4.4,yelM);B(22,3.1,0,20,.2,20,yelM);
 B(10,1.5,-2.2,4,3,.4,yelM);B(10,1.5,2.2,4,3,.4,yelM);B(22,1.5,-10,20,3,.4,yelM);B(22,1.5,10,20,3,.4,yelM);B(32,1.5,0,.4,3,20,yelM);B(12,1.5,-6,.4,3,8,yelM);B(12,1.5,6,.4,3,8,yelM);
@@ -67,21 +87,25 @@ for(const [x,z] of [[16,0],[22,0],[28,-6],[22,6],[17,-7],[27,6]])B(x,3,z,1.6,.05
 /* ===== ЗЕРКАЛО ===== */
 const mirror=new Reflector(new THREE.PlaneGeometry(4,2.6),{textureWidth:512,textureHeight:512,color:0xbbbbbb});mirror.position.set(-7.75,1.4,0);mirror.rotation.y=Math.PI/2;scene.add(mirror);
 B(-7.85,1.4,0,.1,2.8,4.2,LM({color:0x2a2a2a}),false);
-const _mbr=mirror.onBeforeRender;mirror.onBeforeRender=function(...a){if(me)me.head.visible=true;_mbr.apply(this,a);if(me)me.head.visible=false}; // голову видим только в зеркале
+const _mbr=mirror.onBeforeRender;mirror.onBeforeRender=function(...a){if(me){me.head.visible=me.torso.visible=true}_mbr.apply(this,a);if(me){me.head.visible=me.torso.visible=false}}; // голову видим только в зеркале
 
 /* ===== МОДЕЛЬ ГОРИЛЛЫ / МОНСТРА (без ног) ===== */
-const skinM=LM({color:0xb9b9c2}),whiteM=LM({color:0xffffff}),blackM=LM({color:0x050505}),darkM=LM({color:0x333338}),redEye=LM({color:0xff2020,emissive:0x550000});
-const BX=(w,h,d)=>new THREE.BoxGeometry(w,h,d), SP=(r,a=10,b=8)=>new THREE.SphereGeometry(r,a,b);
-const M=(g,m,x=0,y=0,z=0)=>{const o=new THREE.Mesh(g,m);o.position.set(x,y,z);return o};
-function makeHand(mat,mon,side){const h=new THREE.Group();h.add(M(BX(.085,.03,.1),mat,0,0,-.05));h.fingers=[];
- [[-side*.055,-.03,side*.4],[.025,-.1,0],[-.015,-.1,0]].forEach(([x,z,yaw])=>{ // большой, указательный, средний
-  const p1=new THREE.Group();p1.position.set(x,0,z);p1.rotation.y=yaw;p1.add(M(BX(.022,.022,.055),mat,0,0,-.0275));
-  const p2=new THREE.Group();p2.position.z=-.055;p2.add(M(BX(.02,.02,.05),mat,0,0,-.025));p1.add(p2);h.add(p1);h.fingers.push({p1,p2});
-  if(h.fingers.length===2){h.tip=new THREE.Object3D();h.tip.position.z=-.05;p2.add(h.tip)}});
- if(mon)h.scale.setScalar(1.3);return h}
+const FM=o=>new THREE.MeshLambertMaterial({flatShading:true,...o});
+const skinM=FM({color:0xb9b9c2}),whiteM=FM({color:0xffffff}),blackM=FM({color:0x050505}),darkM=FM({color:0x2a2a30}),monBlack=FM({color:0x0b0b0d}),redEye=new THREE.MeshBasicMaterial({color:0xff2020});
+const BX=(w,h,d)=>new THREE.BoxGeometry(w,h,d), SP=(r,a=8,b=6)=>new THREE.SphereGeometry(r,a,b), ZAX=V3(0,0,1);
+const monTex=tex(64,64,(g,w,h)=>{for(let y=0;y<h;y+=2)for(let x=0;x<w;x+=2){const v=150+Math.random()*60|0;g.fillStyle=`rgb(${v},${v},${v})`;g.fillRect(x,y,2,2)}for(let i=0;i<14;i++){g.fillStyle=`rgba(${90+Math.random()*50|0},10,10,.85)`;g.fillRect(Math.random()*w,Math.random()*h,rnd(4,12),rnd(3,9))}});
+const chainT=rep(tex(64,8,(g,w,h)=>{g.fillStyle='#1a1a1a';g.fillRect(0,0,w,h);g.fillStyle='#bbb';for(let x=0;x<w;x+=8)g.fillRect(x,0,3,h)},false),6,1);
+// Рука: ладонь + 3 пальца (большой, указательный, средний), у каждого 2 фаланги. Пальцы вперёд (-Z), ладонь вниз.
+function makeHand(mat,mon,side){const h=new THREE.Group();h.add(M(BX(.1,.04,.11),mat,0,0,-.055));h.fingers=[];const fl=mon?1.3:1;
+ [[-side*.06,-.03,side*.4,.8],[.028,-.11,0,1],[-.018,-.11,0,1.05]].forEach(([x,z,yaw,len],i)=>{
+  const p1=new THREE.Group();p1.position.set(x,0,z);p1.rotation.y=yaw;p1.add(M(BX(.026,.026,.07*len*fl),mat,0,0,-.035*len*fl));
+  const p2=new THREE.Group();p2.position.z=-.07*len*fl;p2.add(M(BX(.022,.022,.06*len*fl),mat,0,0,-.03*len*fl));p1.add(p2);h.add(p1);h.fingers.push({p1,p2});
+  if(i===1){h.tip=new THREE.Object3D();h.tip.position.z=-.06*len*fl;p2.add(h.tip)}});
+ if(mon)h.scale.setScalar(1.25);return h}
 function setCurl(h,c){h.fingers.forEach((f,i)=>{f.p1.rotation.x=-c[i]*1.2;f.p2.rotation.x=-c[i]*1.5})}
-function makeArm(mat,mon,side){const g=new THREE.Group(),r=mon?.085:.06,geo=new THREE.CylinderGeometry(r,r*.85,1,8);
- g.up=new THREE.Mesh(geo,mat);g.fo=new THREE.Mesh(geo,mat);g.hand=makeHand(mat,mon,side);g.add(g.up,g.fo,g.hand,M(SP(r*1.3),mat));g.side=side;return g}
+function makeArm(mu,mf,mon,side){const g=new THREE.Group(),r=mon?.07:.085;
+ g.up=new THREE.Mesh(new THREE.CylinderGeometry(r*.85,r*1.1,1,6),mu);g.fo=new THREE.Mesh(new THREE.CylinderGeometry(r*.6,r*.85,1,6),mf);
+ g.hand=makeHand(mf,mon,side);g.add(g.up,g.fo,g.hand,M(SP(r*1.25,6,5),mu));g.side=side;return g}
 const _m=V3(),_e=V3(),_u=V3(),_dir=V3();
 function seg(m,a,b){m.position.copy(a).add(b).multiplyScalar(.5);_u.subVectors(b,a);const l=_u.length();m.scale.set(1,l,1);m.quaternion.setFromUnitVectors(Y,_u.divideScalar(l||1))}
 // Двухзвенная рука: плечо (0,0,0) → локоть → кисть hl. Если далеко — растягивается.
@@ -89,39 +113,52 @@ function poseArm(g,hl,L,orient=true){const d=hl.length()||1e-3,l=Math.max(L,d/2+
  _e.set(g.side*.6,-.4,.8);_e.addScaledVector(_u,-_e.dot(_u)).normalize().multiplyScalar(Math.sqrt(l*l-d*d/4)).add(_m);
  if(orient){_dir.subVectors(hl,_e).normalize();g.hand.quaternion.setFromUnitVectors(NEGZ,_dir)}
  seg(g.up,ZERO,_e);seg(g.fo,_e,hl);g.hand.position.copy(hl)}
+// Бензопила монстра: жёлтый корпус + шина с анимированной цепью
+function makeSaw(){const g=new THREE.Group(),yel=FM({color:0xe8b020}),blk=FM({color:0x222222});
+ g.add(M(BX(.1,.12,.26),yel,0,0,-.12),M(BX(.05,.06,.06),blk,0,.08,-.05));
+ const bar=new THREE.Group();bar.add(M(BX(.55,.03,.05),new THREE.MeshLambertMaterial({map:chainT})));bar.rotation.y=Math.PI/2;bar.position.set(0,.01,-.4);g.add(bar);
+ g.base=new THREE.Object3D();g.base.position.set(0,.01,-.25);g.tip=new THREE.Object3D();g.tip.position.set(0,.01,-.68);g.add(g.base,g.tip);return g}
 function makeGorilla(color,mon){
- const s=mon?1.6:1,G={mon,L:mon?.52:.4,rest:{}},root=G.root=new THREE.Group();root.scale.setScalar(s);
- const fur=G.fur=LM({map:furTex,color,side:THREE.DoubleSide});
- const head=G.head=new THREE.Group();root.add(head);head.add(M(SP(mon?.2:.17,12,10),fur));
- const face=M(SP(.11),skinM,0,-.03,-.1);face.scale.z=.6;head.add(face);
- for(const sx of[-1,1]){head.add(M(SP(.04,8,6),mon?redEye:whiteM,sx*.055,.035,-.15));head.add(M(SP(.02,6,5),blackM,sx*.055,.035,-.188));head.add(M(SP(.045,6,5),fur,sx*.17,0,0))}
- head.add(M(BX(.04,.03,.02),darkM,0,-.03,-.17));head.add(M(BX(mon?.1:.07,mon?.04:.012,.01),blackM,0,-.085,-.168));
- if(mon){const jaw=G.jaw=new THREE.Group();jaw.position.set(0,-.11,-.1);jaw.add(M(BX(.16,.04,.14),fur));for(let i=-2;i<=2;i++)jaw.add(M(BX(.02,.04,.02),whiteM,i*.03,.04,-.06));head.add(jaw)}
- const sc=mon?[.4,.42,.28]:[.3,.34,.22],torso=G.torso=new THREE.Group();torso.position.set(0,-.38,0);root.add(torso);
- const up=M(new THREE.SphereGeometry(1,12,6,0,6.283,0,1.5708),fur),lo=M(new THREE.SphereGeometry(1,12,6,0,6.283,1.5708,1.5708),fur);up.scale.set(...sc);lo.scale.set(...sc);
- const chest=new THREE.Group();const cp=M(SP(1),LM({map:chestTex}),0,0,-sc[2]*.9);cp.scale.set(sc[0]*.6,sc[1]*.65,.05);chest.add(cp);
- const lbl=M(new THREE.PlaneGeometry(.2,.05),new THREE.MeshBasicMaterial({map:textTex('RILLA'),transparent:true}),0,.05,-sc[2]*.9-.053);lbl.rotation.y=Math.PI;chest.add(lbl);
+ const s=mon?1.6:1,G={mon,L:mon?.5:.42,rest:{}},root=G.root=new THREE.Group();root.scale.setScalar(s);
+ const fur=G.fur=FM({map:mon?monTex:furTex,color,side:THREE.DoubleSide});
+ const head=G.head=new THREE.Group();root.add(head);const hs=o=>head.add(o);
+ hs(M(SP(mon?.19:.18,7,6),fur));
+ for(const sx of[-1,1]){const ear=M(SP(mon?.09:.05,6,5),fur,sx*(mon?.2:.17),0,0);if(mon)ear.scale.z=.3;hs(ear)}
+ if(!mon){ // морда как в Gorilla Tag: серая маска, большие глаза, нос, рот
+  const face=M(SP(.12,7,6),skinM,0,-.02,-.09);face.scale.set(1,.95,.55);hs(face);hs(M(BX(.22,.035,.06),fur,0,.078,-.13));
+  for(const sx of[-1,1]){hs(M(SP(.055,8,6),whiteM,sx*.058,.03,-.145));hs(M(SP(.03,6,5),blackM,sx*.058,.03,-.19))}
+  const mz=M(SP(.06,7,6),skinM,0,-.06,-.15);mz.scale.set(1.2,.9,.7);hs(mz);hs(M(BX(.03,.015,.01),darkM,0,-.045,-.19));hs(M(BX(.06,.01,.01),darkM,0,-.085,-.185))}
+ else{ // монстр (референс Lethal ape): серый мех, чёрное лицо, красный глаз, пасть с зубами
+  const mask=M(SP(.14,7,6),monBlack,0,-.03,-.1);mask.scale.set(1,1.05,.7);hs(mask);hs(M(SP(.03,6,5),redEye,.06,.03,-.17));hs(M(SP(.035,6,5),blackM,-.06,.03,-.17));
+  for(let i=-3;i<=3;i++)hs(M(BX(.015,.025,.01),whiteM,i*.02,-.08,-.19));
+  const jaw=G.jaw=new THREE.Group();jaw.position.set(0,-.1,-.12);jaw.rotation.x=.2;jaw.add(M(BX(.14,.04,.12),monBlack,0,-.01,-.04));for(let i=-3;i<=3;i++)jaw.add(M(BX(.015,.025,.01),whiteM,i*.02,.02,-.1));hs(jaw)}
+ const sc=mon?[.3,.36,.22]:[.34,.36,.24],torso=G.torso=new THREE.Group();torso.position.set(0,-.38,0);root.add(torso);
+ const up=M(new THREE.SphereGeometry(1,8,4,0,6.283,0,1.5708),fur),lo=M(new THREE.SphereGeometry(1,8,4,0,6.283,1.5708,1.5708),fur);up.scale.set(...sc);lo.scale.set(...sc);
+ const chest=new THREE.Group();
+ if(!mon){const cp=M(SP(1,8,6),FM({map:chestTex}),0,0,-sc[2]*.88);cp.scale.set(sc[0]*.62,sc[1]*.7,.07);chest.add(cp);
+  const lbl=M(new THREE.PlaneGeometry(.2,.05),new THREE.MeshBasicMaterial({map:textTex('RILLA'),transparent:true}),0,.07,-sc[2]*.88-.075);lbl.rotation.y=Math.PI;chest.add(lbl)}
  torso.add(up,lo,chest);G.parts=[up,lo,chest];
- const sh=sc[0]+.02;for(const side of[-1,1]){const a=makeArm(fur,mon,side);a.position.set(side*sh,-.23,0);root.add(a);G[side<0?'armL':'armR']=a;G.rest[side<0?'armL':'armR']=a.position.clone()}
+ for(const side of[-1,1]){const a=makeArm(fur,mon?monBlack:fur,mon,side);a.position.set(side*(sc[0]+.02),-.2,0);root.add(a);const k=side<0?'armL':'armR';G[k]=a;G.rest[k]=a.position.clone()}
+ if(mon){G.saw=makeSaw();G.armR.hand.add(G.saw)}
  G.arms={left:G.armL,right:G.armR};return G}
 
 /* ===== ИГРОК ===== */
-const COLORS=[['Классика',0x4a5170],['Красный',0xc03030],['Синий',0x2f5fd0],['Зелёный',0x2e9a4a],['Жёлтый',0xd8b630],['Фиолет',0x8a3ad0],['Оранж',0xe07a20],['Розовый',0xe070b0],['Серый',0x888888],['Чёрный',0x222222]];
+const COLORS=[['Классика',0x4a5170],['Красный',0xc03030],['Синий',0x2f5fd0],['Зелёный',0x2e9a4a],['Жёлтый',0xd8b630],['Фиолет',0x8a3ad0],['Оранж',0xe07a20],['Розовый',0xe070b0],['Серый',0x888888],['Чёрный',0x222222],['Оригинал',0xffffff]];
 const P={vel:V3(),monster:false,color:0,hat:false,glasses:false,grounded:false,snap:false};
 let me=null;
-function buildMe(){if(me)scene.remove(me.root);me=makeGorilla(COLORS[P.color][1],P.monster);scene.add(me.root);me.head.visible=false;
+function buildMe(){if(me)scene.remove(me.root);me=makeGorilla(COLORS[P.color][1],P.monster);scene.add(me.root);me.head.visible=me.torso.visible=false;
  me.hatM=new THREE.Group();me.hatM.add(M(new THREE.CylinderGeometry(.2,.2,.02,14),LM({color:0x222222}),0,.17,0),M(new THREE.CylinderGeometry(.11,.12,.14,14),LM({color:0x222222}),0,.25,0));me.head.add(me.hatM);
  me.glM=new THREE.Group();for(const sx of[-1,1])me.glM.add(M(new THREE.TorusGeometry(.04,.008,6,12),blackM,sx*.055,.035,-.195));me.glM.add(M(BX(.03,.008,.008),blackM,0,.035,-.195));me.head.add(me.glM);
  me.hatM.visible=P.hat;me.glM.visible=P.glasses}
 function setColor(i){P.color=i;me.fur.color.setHex(COLORS[i][1]);drawScreen()}
-function setRole(mon){P.monster=mon;P.color=mon?1:0;buildMe();drawScreen()}
+function setRole(mon){P.monster=mon;P.color=mon?10:0;buildMe();drawScreen()}
 
 /* ===== РУКИ / ВВОД ===== */
 const mkTether=()=>{const m=new THREE.Mesh(new THREE.CylinderGeometry(1,1,1,8),LM({color:0xd86a6a}));m.visible=false;scene.add(m);return m};
-const newHand=side=>({side,has:false,on:false,ctrl:null,gp:null,grip:false,wp:V3(),vis:V3(),vel:V3(),q:new THREE.Quaternion(),lp:null,dl:V3(),c:[0,0,0],tgt:[0,0,0],hold:null,tether:mkTether(),pt:0});
+const newHand=side=>({side,has:false,on:false,ctrl:null,gp:null,grip:false,wp:V3(),vis:V3(),vel:V3(),q:new THREE.Quaternion(),lp:null,dl:V3(),c:[0,0,0],tgt:[0,0,0],hold:null,tether:mkTether(),pt:0,rv:V3(),fwd:V3(0,0,-1),rayC:null});
 const Hs={left:newHand(-1),right:newHand(1)},HL=[Hs.left,Hs.right];
 for(let i=0;i<2;i++){const c=renderer.xr.getController(i),g=renderer.xr.getControllerGrip(i);rig.add(c,g);
- c.addEventListener('connected',e=>{const h=Hs[e.data.handedness];if(!h)return;h.has=true;h.ctrl=g;h.gp=e.data.gamepad;c.userData.h=h});
+ c.addEventListener('connected',e=>{const h=Hs[e.data.handedness];if(!h)return;h.has=true;h.ctrl=g;h.rayC=c;h.gp=e.data.gamepad;c.userData.h=h});
  c.addEventListener('disconnected',()=>{const h=c.userData.h;if(h){h.has=false;h.gp=null}})}
 const keys={};let btnPrev=false;
 addEventListener('keydown',e=>{keys[e.code]=1;if(e.code==='KeyM')menu.visible=!menu.visible;const n=+e.key;if(n>=1&&n<=ACTIONS.length&&e.key.length===1)ACTIONS[n-1][1]()});
@@ -152,15 +189,16 @@ function physics(dt){const xr=renderer.xr.isPresenting,k=P.monster?1.2:1; // м�
   if(P.grounded){P.vel.x+=((-Math.sin(y)*f+Math.cos(y)*r)*sp-P.vel.x)*Math.min(1,10*dt);P.vel.z+=((-Math.cos(y)*f-Math.sin(y)*r)*sp-P.vel.z)*Math.min(1,10*dt);if(keys.Space)P.vel.y=5.2*k}}
  P.vel.multiplyScalar(1-.05*dt);rig.position.addScaledVector(P.vel,dt);rig.updateMatrixWorld(true);
  for(const h of HL){if(!h.on)continue;const prev=h.vis.clone();
-  if(xr){h.ctrl.getWorldPosition(h.wp);h.ctrl.getWorldQuaternion(h.q);const lp=h.ctrl.position;h.dl.copy(h.lp?lp.clone().sub(h.lp):ZERO).applyQuaternion(rig.quaternion);h.lp=lp.clone()}
-  else{camera.getWorldPosition(h.wp);camera.getWorldQuaternion(h.q);h.pt=Math.max(0,h.pt-dt);_d.set(h.side*.3,-.3,-.65-(h.pt>0?Math.sin(h.pt/.22*Math.PI)*.7:0)).applyQuaternion(h.q);h.wp.add(_d)}
+  if(xr){h.ctrl.getWorldPosition(h.wp);h.ctrl.getWorldQuaternion(h.q);h.rayC.getWorldDirection(h.fwd);h.fwd.negate();const lp=h.ctrl.position;h.dl.copy(h.lp?lp.clone().sub(h.lp):ZERO).applyQuaternion(rig.quaternion);h.lp=lp.clone();h.rv.lerp(h.dl.clone().divideScalar(dt),.5)}
+  else{camera.getWorldPosition(h.wp);camera.getWorldQuaternion(h.q);h.fwd.set(0,0,-1).applyQuaternion(h.q);h.rv.set(0,0,0);h.pt=Math.max(0,h.pt-dt);_d.set(h.side*.3,-.3,-.65-(h.pt>0?Math.sin(h.pt/.22*Math.PI)*.7:0)).applyQuaternion(h.q);h.wp.add(_d)}
   const p=h.wp.clone();
   if(resolve(p,.09)){const n=resolve.n.clone();
    if(xr){const disp=p.clone().sub(h.wp).clampLength(0,.4);rig.position.add(disp);
-    const vn=P.vel.dot(n);if(vn<0)P.vel.addScaledVector(n,-vn);
-    // трение: тянешь руку по поверхности — тело едет в обратную сторону
-    const t=h.dl.clone().addScaledVector(n,-h.dl.dot(n)).multiplyScalar(-.9/dt*k),vn2=P.vel.dot(n),pn=Math.max(0,disp.dot(n)/dt*.9*k);
-    P.vel.copy(t).addScaledVector(n,Math.max(vn2,pn));
+    let vn=P.vel.dot(n);if(vn<0){P.vel.addScaledVector(n,-vn);vn=0} // посадка на руку НЕ пружинит: скорость «в поверхность» гасится
+    const push=Math.max(0,-h.rv.dot(n))*.9*k; // толчок = скорость руки В поверхность относительно тела
+    const tv=h.rv.clone().addScaledVector(n,-h.rv.dot(n)).multiplyScalar(-.9*k); // трение: тянешь руку по поверхности — тело едет назад
+    const cur=P.vel.clone().addScaledVector(n,-vn);cur.lerp(tv,.35);
+    P.vel.copy(cur).addScaledVector(n,Math.max(vn,push)); // берём максимум — при отрыве скорость прыжка не теряется
     P.vel.clampLength(0,9*k)}
    h.vis.copy(p)}else h.vis.copy(h.wp);
   h.vel.lerp(h.vis.clone().sub(prev).divideScalar(dt),.5)}
@@ -171,10 +209,13 @@ function physics(dt){const xr=renderer.xr.isPresenting,k=P.monster?1.2:1; // м�
  if(rig.position.y<-12){rig.position.set(0,.5,3);P.vel.set(0,0,0)}}
 
 /* ===== ОБНОВЛЕНИЕ МОДЕЛИ ИГРОКА ===== */
+const _mt=new THREE.Matrix4(),_rq=new THREE.Quaternion(),_fw=V3();
+// Ориентация кисти: пальцы вперёд по направлению контроллера, ладонь вниз (как в жизни), чуть внутрь
+function handQ(h,out){_fw.copy(h.fwd);_fw.y*=.6;_fw.normalize();_mt.lookAt(ZERO,_fw,Y);out.setFromRotationMatrix(_mt);return out.multiply(_rq.setFromAxisAngle(ZAX,-h.side*.25))}
 function updMe(){const r=me.root;camera.getWorldPosition(headW);r.position.copy(headW);camera.getWorldDirection(_d);r.rotation.y=Math.atan2(-_d.x,-_d.z);
- camera.getWorldQuaternion(_q);me.head.quaternion.copy(_q2.copy(r.quaternion).invert().multiply(_q));if(me.jaw)me.jaw.rotation.x=0;r.updateMatrixWorld(true);
+ camera.getWorldQuaternion(_q);me.head.quaternion.copy(_q2.copy(r.quaternion).invert().multiply(_q));r.updateMatrixWorld(true);
  for(const h of HL){const a=me.arms[h.side<0?'left':'right'];a.visible=h.on;if(!h.on)continue;
-  const loc=r.worldToLocal(h.vis.clone()).sub(a.position);poseArm(a,loc,me.L,false);a.hand.quaternion.copy(_q2.copy(r.quaternion).invert().multiply(h.q));setCurl(a.hand,h.c)}}
+  const loc=r.worldToLocal(h.vis.clone()).sub(a.position);poseArm(a,loc,me.L,false);handQ(h,_q);a.hand.quaternion.copy(_q2.copy(r.quaternion).invert().multiply(_q));setCurl(a.hand,h.c)}}
 
 /* ===== ЭФФЕКТЫ: КРОВЬ, ГИБСЫ ===== */
 const decals=[];let di=0;
@@ -194,7 +235,7 @@ function effects(dt){for(let i=0;i<GN;i++){const g=gibs[i];if(g.l>0){g.l-=dt;g.v
 
 /* ===== NPC ===== */
 const npcs=[];let holdSeq=0;
-function spawnNPC(pos,mode,mon=false,col){const G=makeGorilla(col??COLORS[(Math.random()*10)|0][1],mon);scene.add(G.root);
+function spawnNPC(pos,mode,mon=false,col){const G=makeGorilla(col??(mon?0xffffff:COLORS[(Math.random()*10)|0][1]),mon);scene.add(G.root);
  const n={G,state:mode,hits:0,lastHit:-9,vel:V3(),spin:V3(),tgt:pos.clone(),home:pos.clone(),limb:{armL:true,armR:true},alive:true,gone:false,reviveAt:0,hitCd:0,pull:null,h:mon?1.5:1};
  G.root.position.set(pos.x,n.h,pos.z);if(mode==='rag')toRag(n,0,true,false);npcs.push(n);return n}
 const lieQ=y=>new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI/2,y,0,'YXZ'));
@@ -253,11 +294,25 @@ function monsterLogic(dt,t){if(!P.monster){for(const h of HL){h.tether.visible=f
    else{n.vel.copy(dir).multiplyScalar(3)}}}}
 function stretch(h,a,b,d,lim){const m=h.tether;m.visible=true;seg(m,a,b);m.scale.x=m.scale.z=.05*clamp(1.1-d/lim,.15,1)}
 
+/* ===== БЕНЗОПИЛА МОНСТРА: триггер правой руки ===== */
+const _sa=V3(),_sb=V3(),_sp=V3();let sawO,sawG;
+function sawSound(on){if(!on&&!sawO)return;try{AC=AC||new AudioContext();if(!sawO){sawO=AC.createOscillator();sawG=AC.createGain();sawO.type='sawtooth';sawO.frequency.value=70;sawG.gain.value=0;sawO.connect(sawG).connect(AC.destination);sawO.start()}sawG.gain.value=on?.06:0;sawO.frequency.value=on?90+Math.random()*30:70}catch(e){}}
+function sawLogic(dt,t){const saw=me.saw,h=Hs.right;let run=false;chainT.offset.x-=dt*.5;
+ if(saw){run=h.on&&h.c[1]>.6;if(run)chainT.offset.x-=dt*8;if(me.jaw)me.jaw.rotation.x=.15+(run?.2*Math.sin(t*30)+.15:0);
+  if(run){saw.base.getWorldPosition(_sa);saw.tip.getWorldPosition(_sb);
+   for(const n of npcs){if(n.gone||t<(n.sawCd||0))continue;const s=n.G.root.scale.x;let hit=false;
+    for(let i=0;i<=4&&!hit;i++){_sp.lerpVectors(_sa,_sb,i/4);
+     for(const key of['armL','armR'])if(n.limb[key]&&partPos(n,key).distanceTo(_sp)<.22*s){n.sawCd=t+.3;tearLimb(n,key,null);hit=true;break}
+     if(hit)break;
+     if(n.G.head.parent!==scene&&partPos(n,'head').distanceTo(_sp)<.25*s){n.sawCd=t+.3;tearHead(n,null);hit=true;break}
+     if(partPos(n,'torso').distanceTo(_sp)<.32*s){n.sawCd=t+.08;n.sawT=(n.sawT||0)+.08;burstGibs(_sp,6,3);if(n.sawT>.5){splitNPC(n);hit=true}break}}}}}
+ sawSound(run)}
+
 /* ===== ТЕРМИНАЛ, МЕНЮ НА РУКЕ, ДЕЙСТВИЯ ===== */
 const nearestNPC=()=>{let b=null,bd=1e9;for(const n of npcs){if(n.gone)continue;const d=n.G.root.position.distanceTo(headW);if(d<bd){bd=d;b=n}}return b};
 const fwd=()=>{camera.getWorldDirection(_d);_d.y=0;return _d.normalize().clone()};
 const spawnAt=(mode,mon)=>{const f=fwd(),p=headW.clone().addScaledVector(f,2);p.y=0;const n=spawnNPC(p,mode,mon);n.G.root.rotation.y=Math.atan2(f.x,f.z)};
-const ACTIONS=[['Цвет ▶',()=>setColor((P.color+1)%10)],['Шляпа',()=>{P.hat=!P.hat;me.hatM.visible=P.hat}],['Очки',()=>{P.glasses=!P.glasses;me.glM.visible=P.glasses}],['Зеркало',()=>{mirror.visible=!mirror.visible}],
+const ACTIONS=[['Цвет ▶',()=>setColor((P.color+1)%COLORS.length)],['Шляпа',()=>{P.hat=!P.hat;me.hatM.visible=P.hat}],['Очки',()=>{P.glasses=!P.glasses;me.glM.visible=P.glasses}],['Зеркало',()=>{mirror.visible=!mirror.visible}],
  ['Роль: '+'игрок/монстр',()=>setRole(!P.monster)],['NPC стоит',()=>spawnAt('stand')],['NPC ходит',()=>spawnAt('walk')],['NPC рэгдолл',()=>spawnAt('rag')],['NPC монстр',()=>spawnAt('stand',true)],
  ['Тест: оторвать руку',()=>{const n=nearestNPC();if(n){const k=n.limb.armR?'armR':'armL';tearLimb(n,k,null)}}],['Тест: оторвать голову',()=>{const n=nearestNPC();if(n&&n.G.head.parent!==scene)tearHead(n,null)}],
  ['Тест: разорвать',()=>{const n=nearestNPC();if(n)splitNPC(n)}],['Тест: бросок в стену',()=>{const n=nearestNPC();if(n){const f=fwd();n.G.root.position.copy(headW).addScaledVector(f,1.2);n.vel.copy(f).multiplyScalar(14);n.state='thrown';n.spin.set(3,2,1)}}],
@@ -293,7 +348,7 @@ spawnNPC(V3(2,0,-14),'walk',false,0xc03030);
 spawnNPC(V3(0,0,-16),'rag',false,0x2e9a4a).alive=false;
 const clock=new THREE.Clock();let fpsT=0,fpsN=0;
 renderer.setAnimationLoop(()=>{const dt=Math.min(clock.getDelta(),.05),t=clock.elapsedTime;
- readInput(dt);physics(dt);attachMenu();updMe();monsterLogic(dt,t);for(const n of npcs)updNPC(n,dt,t);effects(dt);pokeUI(t);
+ readInput(dt);physics(dt);attachMenu();updMe();monsterLogic(dt,t);sawLogic(dt,t);for(const n of npcs)updNPC(n,dt,t);effects(dt);pokeUI(t);
  fpsT+=dt;fpsN++;if(fpsT>.5){const f=document.getElementById('fps');if(f)f.textContent=Math.round(fpsN/fpsT)+' fps · '+(P.monster?'МОНСТР':'ИГРОК');fpsT=0;fpsN=0}
  renderer.render(scene,camera)});
 </script></body></html>
