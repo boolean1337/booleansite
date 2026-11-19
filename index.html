@@ -48,7 +48,8 @@
     <div class="sub">arm-based locomotion · Gorilla-Tag style</div>
     <div style="margin-top:6px">
       <b>Двигайся:</b> упрись ладонью в пол/стену/ветку и оттолкнись.<br>
-      Руки — это ноги. Толчок вниз-назад = полёт вперёд-вверх.
+      Руки — это ноги. Толчок вниз-назад = полёт вперёд-вверх.<br>
+      <b>Грип</b> — тормоз/висение · <b>B/Y</b> или <span class="key">R</span> — рецентровка.
     </div>
   </div>
 
@@ -90,9 +91,9 @@ const CONFIG = {
   brake: 6.0,              // сила "тормоза" при зажатом грипе
   groundFriction: 8.0,     // трение об пол
   airDamping: 0.4,         // сопротивление воздуха (1/s)
-  followGround: 24.0,      // насколько тело следует за головой (на земле)
-  followAir: 1.5,          // ... в полёте (слабо — даёт планировать)
-  modelHeight: 1.72,       // целевой рост аватара (м)
+  followGround: 12.0,      // насколько тело следует за головой (на земле)
+  followAir: 0.0,          // в полёте НЕ притягиваем (иначе «магнит»)
+  modelHeight: 1.5,        // целевой рост аватара (м) — модель изначально ~1.07м
 };
 
 // =====================================================================
@@ -179,8 +180,8 @@ function addTree(x, z, r, h, color) {
   worldRoot.add(grid);
 })();
 
-// --- стартовая платформа ---
-addBox(-3, 0, -3, 3, 0.5, 3, 0x4a6488, { roughness:.8 });
+// --- стартовая платформа (тонкая, декоративная) ---
+addBox(-3, 0, -3, 3, 0.05, 3, 0x4a6488, { roughness:.8 });
 
 // --- периметр-стены ---
 const W = 30;
@@ -244,6 +245,8 @@ const MIRROR_X = -2.0;  // плоскость зеркала (x = const), смо
 const bodyPos = new THREE.Vector3(0, 1.0, 0);   // центр тела (грудь)
 const bodyVel = new THREE.Vector3();
 let grounded = false;
+const walkOffset = new THREE.Vector2(0, 0);    // сдвиг головы от тела по горизонтали (блокируется на земле)
+let bodyBaseY = 0.9;                            // высота тела, считается из пропорций модели
 
 function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
 
@@ -363,6 +366,9 @@ function buildAvatar(gltf, isMirror) {
   const minY = b2.min.y;
   model.position.y -= minY;
 
+  // разворачиваем модель лицом к игроку (модель смотрит +Z, камера — в −Z)
+  model.rotation.y = Math.PI;
+
   group.add(model);
 
   // собираем кости
@@ -422,10 +428,18 @@ async function loadAvatar() {
   playerAvatar = buildAvatar(g1, false);
   mirrorAvatar = buildAvatar(g2, true);
 
+  // высота тела по пропорциям модели (грудь = голова минус eyeToChest)
+  bodyBaseY = playerAvatar.headLocal.y - HEAD_OFFSET.y;
+  bodyPos.y = bodyBaseY;
+
   worldRoot.add(playerAvatar.group);
-  // зеркальный аватар добавляем в отдельную группу (без negative-scale — отражаем вручную)
+
+  // зеркало — статичная зеркальная копия (без пофреймового ведения костей,
+  // чтобы ничего не «растягивалось»). Отражаем через negative-scale.
   const mg = new THREE.Group();
   mg.name = 'mirror';
+  mg.position.set(2*MIRROR_X, 0, 0);
+  mg.scale.x = -1;
   mg.add(mirrorAvatar.group);
   worldRoot.add(mg);
 }
@@ -466,6 +480,12 @@ function makeArmIK(shoulder, upper, lower, hand, poleLocal, natural) {
   return function solve(targetWorld, handWorldQuat) {
     // плечо считаем фиксированным (спина не двигается)
     const S = _v1; shoulder.getWorldPosition(S);
+
+    // зажимаем цель в досягаемость руки — иначе рука растянется
+    const reach = a + b;
+    const toTarget = _v3.copy(targetWorld).sub(S);
+    if (toTarget.length() > reach) targetWorld = S.clone().addScaledVector(toTarget.normalize(), reach);
+
     const toT = _v2.copy(targetWorld).sub(S);
     let d = toT.length();
     d = clamp(d, Math.abs(a-b)+1e-4, a+b-1e-4);
@@ -506,9 +526,9 @@ function makeArmIK(shoulder, upper, lower, hand, poleLocal, natural) {
 // =====================================================================
 const handState = {
   L: { present:false, pos:new THREE.Vector3(), quat:new THREE.Quaternion(), prev:new THREE.Vector3(), vel:new THREE.Vector3(),
-       grip:0, trigger:0, ik:null },
+       grip:0, trigger:0, rcPrev:false, ik:null },
   R: { present:false, pos:new THREE.Vector3(), quat:new THREE.Quaternion(), prev:new THREE.Vector3(), vel:new THREE.Vector3(),
-       grip:0, trigger:0, ik:null },
+       grip:0, trigger:0, rcPrev:false, ik:null },
 };
 let headYaw = 0, headPitch = 0;
 
@@ -640,10 +660,26 @@ function doLocomotion(dt) {
 }
 
 function doBodyFollow(dt) {
-  // тело следует за головой по горизонтали
-  const k = grounded ? CONFIG.followGround : CONFIG.followAir;
-  bodyVel.x += (camera.position.x - bodyPos.x) * k * dt;
-  bodyVel.z += (camera.position.z - bodyPos.z) * k * dt;
+  // тело следует за головой по горизонтали, но с ФИКСИРОВАННЫМ сдвигом:
+  // на земле сдвиг заморожен (ходит за головой без «магнита» к центру),
+  // в полёте сдвиг обновляется (тело свободно улетает).
+  if (grounded) {
+    const tx = camera.position.x - walkOffset.x;
+    const tz = camera.position.z - walkOffset.y;
+    bodyVel.x += (tx - bodyPos.x) * CONFIG.followGround * dt;
+    bodyVel.z += (tz - bodyPos.z) * CONFIG.followGround * dt;
+  } else {
+    walkOffset.x = camera.position.x - bodyPos.x;
+    walkOffset.y = camera.position.z - bodyPos.z;
+  }
+}
+
+function recenter() {
+  // вернуть тело под голову и обнулить сдвиг
+  walkOffset.set(0, 0);
+  bodyPos.x = camera.position.x;
+  bodyPos.z = camera.position.z;
+  bodyVel.x = 0; bodyVel.z = 0;
 }
 
 // =====================================================================
@@ -687,6 +723,10 @@ function onXRFrame(time, frame) {
       st.trigger = gp.buttons[0] ? gp.buttons[0].value : 0;
       st.grip   = gp.buttons[1] ? gp.buttons[1].value : 0;
       if (st.grip === 0) st.grip = gp.buttons[2] ? gp.buttons[2].value : 0; // запасной squeeze
+      // кнопка B/Y (buttons[3]) — рецентровка
+      const rc = gp.buttons[3] ? !!gp.buttons[3].pressed : false;
+      if (rc && !st.rcPrev) recenter();
+      st.rcPrev = rc;
     }
   });
 
@@ -705,10 +745,6 @@ function onXRFrame(time, frame) {
   if (playerAvatar) {
     const headWorld = bodyPos.clone().add(HEAD_OFFSET);
     updateAvatar(playerAvatar, headWorld, camera.quaternion, handState.L, handState.R, false);
-    // зеркальный аватар — та же голова, но отражение по x
-    if (mirrorAvatar) {
-      updateAvatar(mirrorAvatar, headWorld, camera.quaternion, handState.L, handState.R, true);
-    }
   }
 
   renderer.render(scene, camera);
@@ -751,7 +787,7 @@ function setupDesktop() {
       playerAvatar.group.position.set(0,0,0);
       playerAvatar.group.updateMatrixWorld(true);
       if (mirrorAvatar) {
-        mirrorAvatar.group.position.set(2*MIRROR_X, 0, 0);
+        mirrorAvatar.group.position.set(0,0,0);
         mirrorAvatar.group.updateMatrixWorld(true);
       }
     }
@@ -775,7 +811,8 @@ renderer.xr.addEventListener('sessionstart', () => {
   document.getElementById('hint').classList.add('hidden');
   vrBtn.classList.add('hidden');
   // сброс физики при входе
-  bodyPos.set(0, 1.0, 0); bodyVel.set(0,0,0);
+  bodyPos.set(0, bodyBaseY, 0); bodyVel.set(0,0,0);
+  walkOffset.set(0, 0);
   lastTime = 0;
 });
 renderer.xr.addEventListener('sessionend', () => {
@@ -830,6 +867,11 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// рецентровка: R (клавиатура) или кнопка B/Y на правом контроллере
+window.addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R' || e.key === 'к' || e.key === 'К') recenter();
 });
 
 start();
