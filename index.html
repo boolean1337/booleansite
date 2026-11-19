@@ -9,88 +9,100 @@ canvas{display:block}
 button{background:var(--ac);color:#fff;border:0;border-radius:6px;padding:8px 12px;font:inherit;margin-top:6px}
 button:disabled{opacity:.5}
 </style></head><body>
-<div id="ui"><b>BRUTAL SANDBOX VR</b><br>Хват — взять · Курок — выстрел/применить · Левый стик — ходьба · Правый — поворот · Тыкай пальцем в панель на стене (без VR — мышкой)<br><button id="vr" disabled>…</button></div>
+<div id="ui"><b>BRUTAL SANDBOX VR</b><br>Хват — взять · Курок — выстрел/применить · Кулак (хват без предмета) — удар · Левый стик — ходьба · Правый — поворот · Отрыв: возьми обе части и тяни в стороны · Тыкай пальцем в панель (без VR — мышкой)<br><button id="vr" disabled>…</button></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
 <script>
-const V3=THREE.Vector3,UP=new V3(0,1,0),cv=v=>new CANNON.Vec3(v.x,v.y,v.z),rnd=(a=1)=>(Math.random()-.5)*a;
+const V3=THREE.Vector3,UP=new V3(0,1,0),cv=v=>new CANNON.Vec3(v.x,v.y,v.z),rnd=(a=1)=>(Math.random()-.5)*a,DT=1/120;
 const S={dis:1,blood:1,cens:0,col:0,grav:0};
 const COLS=['#b00000','#2fd24a','#2b7bff','#ff4fd8','#0a0a0a'],COLN=['красная','зелёная','синяя','розовая','чёрная'],GR=[-9.8,-1.6,0];
-const renderer=new THREE.WebGLRenderer({antialias:true});renderer.localClippingEnabled=true;renderer.xr.enabled=true;
+const sx=()=>(Math.random()<.5?-1:1)*(1.1+Math.random()*1.8),sz=()=>-1.2+rnd(.5);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.localClippingEnabled=true;renderer.xr.enabled=true;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.25;
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);document.body.appendChild(renderer.domElement);
-const scene=new THREE.Scene();scene.background=new THREE.Color(0x2a2a2e);scene.fog=new THREE.Fog(0x2a2a2e,8,30);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x202024);
 const rig=new THREE.Group();rig.position.set(0,0,.6);scene.add(rig);
 const cam=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.02,60);cam.position.set(0,1.6,0);rig.add(cam);
-scene.add(new THREE.HemisphereLight(0xffffff,0x444455,.9));const dl=new THREE.DirectionalLight(0xffffff,.8);dl.position.set(2,5,3);scene.add(dl);
-const conc=new THREE.MeshStandardMaterial({color:0x7a7a7a,roughness:1});
-const fl=new THREE.Mesh(new THREE.PlaneGeometry(40,40),conc);fl.rotation.x=-Math.PI/2;scene.add(fl);
-const wl=new THREE.Mesh(new THREE.BoxGeometry(12,6,.2),conc);wl.position.set(0,3,-2.2);scene.add(wl);
 addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
-// ---- physics
-const W=new CANNON.World();W.gravity.set(0,-9.8,0);W.solver.iterations=14;W.broadphase=new CANNON.SAPBroadphase(W);W.defaultContactMaterial.friction=.5;W.defaultContactMaterial.restitution=.05;
-const gb=new CANNON.Body({mass:0,shape:new CANNON.Plane()});gb.quaternion.setFromEuler(-Math.PI/2,0,0);W.addBody(gb);
-const wb=new CANNON.Body({mass:0,shape:new CANNON.Box(new CANNON.Vec3(6,3,.1))});wb.position.set(0,3,-2.2);W.addBody(wb);
+const pm=new THREE.MeshStandardMaterial({color:0x6a6cff,roughness:.55});
+// ---- prototype-style textures (remote images are blocked on hosted pages, so they are drawn here)
+function proto(c1,c2,ln,rx,ry){const c=document.createElement('canvas');c.width=c.height=256;const x=c.getContext('2d');x.fillStyle=c1;x.fillRect(0,0,256,256);x.fillStyle=c2;x.fillRect(0,0,128,128);x.fillRect(128,128,128,128);
+ x.strokeStyle=ln;x.lineWidth=1;for(let i=1;i<8;i++){x.beginPath();x.moveTo(i*32,0);x.lineTo(i*32,256);x.moveTo(0,i*32);x.lineTo(256,i*32);x.stroke()}x.lineWidth=4;x.strokeRect(2,2,252,252);
+ const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rx,ry);t.anisotropy=8;return new THREE.MeshStandardMaterial({map:t,roughness:.9})}
+const MF=proto('#8c8c92','#7a7a80','#5a5a60',5,4),MW=proto('#c9c9cf','#b8b8be','#8a8a92',5,2),MC=proto('#a8a8ae','#9a9aa0','#70707a',5,4);
+const PM={box:proto('#e8803a','#d96f2a','#9a4a14',1,1),ball:proto('#8a5cd6','#7a4cc6','#4a2a8a',2,1),barrel:proto('#4cae5a','#3c9e4a','#216a2c',2,1),slab:proto('#59a3e0','#4993d0','#25608f',2,2)};
+// ---- physics world + room
+const W=new CANNON.World();W.gravity.set(0,-9.8,0);W.solver.iterations=18;W.broadphase=new CANNON.SAPBroadphase(W);W.defaultContactMaterial.friction=.5;W.defaultContactMaterial.restitution=.03;W.defaultContactMaterial.contactEquationStiffness=5e7;
+function stat(w,h,d,x,y,z,m){const me=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);me.position.set(x,y,z);scene.add(me);const b=new CANNON.Body({mass:0});b.addShape(new CANNON.Box(new CANNON.Vec3(w/2,h/2,d/2)));b.position.set(x,y,z);W.addBody(b)}
+stat(10,2,8.2,0,-1,1.9,MF);stat(10,.2,8.2,0,3.6,1.9,MC);stat(10,3.5,.2,0,1.75,-2.3,MW);stat(10,3.5,.2,0,1.75,6.2,MW);stat(.2,3.5,8.2,-5.1,1.75,1.9,MW);stat(.2,3.5,8.2,5.1,1.75,1.9,MW);
+scene.add(new THREE.HemisphereLight(0xffffff,0x555566,.55));
+[[-3,-.5],[3,-.5],[-3,3.5],[3,3.5],[0,1.5]].forEach(([x,z])=>{const l=new THREE.PointLight(0xfff2e0,.55,13,1.4);l.position.set(x,3.2,z);scene.add(l);const p=new THREE.Mesh(new THREE.BoxGeometry(1.2,.05,.6),new THREE.MeshBasicMaterial({color:0xffffff}));p.position.set(x,3.47,z);scene.add(p)});
 const items=[],joints=[],npcs=[],fxs=[],IDQ=new CANNON.Quaternion(0,0,0,1);
 const innerCol=()=>S.blood?(S.cens?'#444':COLS[S.col]):'#e8dcc8';
-function addItem(body,obj,o){const g=new THREE.Group();g.add(obj);scene.add(g);W.addBody(body);const it=Object.assign({body,g,cdT:0},o);body.it=it;items.push(it);return it}
-function mkPiece(body,geo,h,npc,cuts,eyes){const planes=cuts.map(()=>new THREE.Plane());
+function addItem(body,obj,o){const g=new THREE.Group();g.add(obj);scene.add(g);W.addBody(body);const it=Object.assign({body,g,cdT:0,m0:body.mass},o);body.it=it;items.push(it);return it}
+function mkPiece(body,geo,h,npc,cuts,extra){const planes=cuts.map(()=>new THREE.Plane());
  const skin=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x6a6cff,roughness:.55,clippingPlanes:planes}));
  const inner=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:innerCol(),side:THREE.BackSide,clippingPlanes:planes}));
- const o=new THREE.Group();o.add(skin,inner);
- if(eyes)for(const s of[-1,1]){const e=new THREE.Mesh(new THREE.SphereGeometry(.018,8,8),new THREE.MeshBasicMaterial({color:0xffffff}));e.position.set(s*.04,.02,-.092);o.add(e)}
- return addItem(body,o,{skin,inner,cuts,planes,h,npc,dmg:0,cd:0})}
-const mkBody=(m,sh)=>{const b=new CANNON.Body({mass:m,linearDamping:.15,angularDamping:.35});b.addShape(sh);b.collisionFilterGroup=2;b.collisionFilterMask=1;return b};
+ const o=new THREE.Group();o.add(skin,inner);if(extra)o.add(extra);return addItem(body,o,{skin,inner,cuts,planes,h,npc,dmg:0,cd:0})}
+const mkBody=(m,sh)=>{const b=new CANNON.Body({mass:m,linearDamping:.15,angularDamping:.35});b.addShape(sh);b.collisionFilterGroup=2;b.collisionFilterMask=5;return b};
 function mkJoint(a,b,pa,pb){const j={a,b,pa,pb};j.c=new CANNON.PointToPointConstraint(a.body,cv(pa),b.body,cv(pb));W.addConstraint(j.c);joints.push(j)}
-// ---- NPC
-const SEG=[['pelvis',[.15,.1,.09],[0,1,0],10],['chest',[.19,.2,.1],[0,1.3,0],14],['head',[.1,.11,.1],[0,1.66,0],5],
-['uaL',[.045,.14,.045],[-.25,1.4,0],2.5],['uaR',[.045,.14,.045],[.25,1.4,0],2.5],['faL',[.04,.14,.04],[-.25,1.12,0],2],['faR',[.04,.14,.04],[.25,1.12,0],2],
-['thL',[.07,.2,.07],[-.09,.7,0],7],['thR',[.07,.2,.07],[.09,.7,0],7],['shL',[.06,.25,.06],[-.09,.25,0],4],['shR',[.06,.25,.06],[.09,.25,0],4]];
-const JT=[['pelvis','chest',[0,1.1,0]],['chest','head',[0,1.53,0]],['chest','uaL',[-.25,1.5,0]],['chest','uaR',[.25,1.5,0]],['uaL','faL',[-.25,1.26,0]],['uaR','faR',[.25,1.26,0]],
-['pelvis','thL',[-.09,.9,0]],['pelvis','thR',[.09,.9,0]],['thL','shL',[-.09,.5,0]],['thR','shR',[.09,.5,0]]];
-function spawnNPC(kind){const x=rnd(1.4),z=-1+rnd(.4),y0=kind=='ragdoll'?.6:.02,npc={kind,active:kind!='ragdoll',ax:x,az:z,t:0,its:[]},m={};npcs.push(npc);
- SEG.forEach(([n,h,p,mass])=>{const b=mkBody(mass,new CANNON.Box(new CANNON.Vec3(h[0],h[1],h[2])));b.position.set(p[0]+x,p[1]+y0,p[2]+z);
-  const geo=/^(pelvis|chest|head)$/.test(n)?new THREE.SphereGeometry(1,16,12).scale(h[0],h[1],h[2]):new THREE.CylinderGeometry(h[0],h[0],h[1]*2,12);
-  const it=mkPiece(b,geo,h,npc,[],n=='head');it.off=p;it.n=n;npc.its.push(it);m[n]=it;if(kind=='ragdoll')b.velocity.set(rnd(2),0,rnd(2))});
- JT.forEach(([a,b,p])=>{const w=new V3(p[0]+x,p[1]+y0,p[2]+z),A=m[a],B=m[b],l=(it)=>new V3(w.x-it.body.position.x,w.y-it.body.position.y,w.z-it.body.position.z);mkJoint(A,B,l(A),l(B))})}
-W.addEventListener('preStep',()=>{npcs.forEach(n=>{if(!n.active)return;n.t+=1/60;
- if(n.kind=='walk'){const c=cam.getWorldPosition(new V3),dx=c.x-n.ax,dz=c.z-n.az,d=Math.hypot(dx,dz);if(d>1.1){n.ax+=dx/d*.5/60;n.az+=dz/d*.5/60}}
+// ---- mannequin NPC (segmented torso, capsule limbs, boxy feet, fingered hands, white eyes)
+const capG=(r,h)=>{const g=new THREE.SphereGeometry(r,14,12),p=g.attributes.position;for(let i=0;i<p.count;i++)p.setY(i,p.getY(i)+(p.getY(i)>=0?h:-h));g.computeVertexNormals();return g};
+const SEG=[['pelvis','e',[.16,.1,.1],[0,1,0],10,0],['abd','e',[.15,.12,.1],[0,1.2,0],7,0],['chest','e',[.19,.17,.11],[0,1.43,0],12,0],['head','e',[.1,.12,.1],[0,1.75,0],5,0]];
+const JT=[['pelvis','abd',[0,1.1,0]],['abd','chest',[0,1.3,0]],['chest','head',[0,1.62,0]]];
+[-1,1].forEach(s=>{const k=s<0?'L':'R',th=s*.35,dx=Math.sin(th),dy=-Math.cos(th),at=d=>[s*.24+dx*d,1.52+dy*d,0];
+ SEG.push(['ua'+k,'c',[.05,.17,.05],at(.17),2.5,th],['fa'+k,'c',[.04,.16,.04],at(.5),2,th],['th'+k,'c',[.075,.21,.075],[s*.1,.7,0],7,0],['sh'+k,'c',[.055,.21,.055],[s*.1,.3,0],4,0],['ft'+k,'b',[.055,.04,.11],[s*.1,.04,-.03],1.2,0]);
+ JT.push(['chest','ua'+k,at(0)],['ua'+k,'fa'+k,at(.34)],['pelvis','th'+k,[s*.1,.9,0]],['th'+k,'sh'+k,[s*.1,.5,0]],['sh'+k,'ft'+k,[s*.1,.09,0]])});
+const bxm=(w,h,d,x,y,z,p,m)=>{const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m||pm);o.position.set(x,y,z);p.add(o);return o};
+function face(){const g=new THREE.Group(),w=new THREE.MeshBasicMaterial({color:0xffffff});for(const s of[-1,1]){const e=new THREE.Mesh(new THREE.SphereGeometry(.022,10,8),w);e.position.set(s*.04,.02,-.088);g.add(e)}
+ const n=new THREE.Mesh(new THREE.SphereGeometry(1,10,8).scale(.022,.05,.04),pm);n.position.set(0,-.02,-.1);g.add(n);return g}
+function npcHand(){const g=new THREE.Group();g.position.y=-.16;bxm(.035,.09,.085,0,-.045,0,g);
+ for(let i=0;i<4;i++){const j=new THREE.Group();j.position.set(0,-.085,(i-1.5)*.021);g.add(j);let p=j,l=.034;for(let k=0;k<3;k++){bxm(.017,l,.017,0,-l/2,0,p);const n=new THREE.Group();n.position.y=-l;n.rotation.z=.15;p.add(n);p=n;l*=.8}}
+ const t=new THREE.Group();t.position.set(0,-.03,-.05);t.rotation.x=.6;g.add(t);bxm(.02,.04,.02,0,-.02,0,t);return g}
+function spawnNPC(kind){const x=sx(),z=sz(),y0=kind=='ragdoll'?.7:.02,npc={kind,active:kind!='ragdoll',ax:x,az:z,t:0,its:[]},m={};npcs.push(npc);
+ SEG.forEach(([n,k,h,p,mass,rz])=>{const b=mkBody(mass,new CANNON.Box(new CANNON.Vec3(h[0],h[1],h[2])));b.position.set(p[0]+x,p[1]+y0,p[2]+z);b.quaternion.setFromEuler(0,0,rz);
+  const geo=k=='e'?new THREE.SphereGeometry(1,16,12).scale(h[0],h[1],h[2]):k=='c'?capG(h[0],h[1]-h[0]):new THREE.BoxGeometry(h[0]*2,h[1]*2,h[2]*2);
+  const it=mkPiece(b,geo,h,npc,[],n=='head'?face():n[0]=='f'&&n[1]=='a'?npcHand():null);it.off=p;it.n=n;it.rq=b.quaternion.clone();npc.its.push(it);m[n]=it;if(kind=='ragdoll')b.velocity.set(rnd(2),0,rnd(2))});
+ JT.forEach(([a,b,p])=>{const w=cv(new V3(p[0]+x,p[1]+y0,p[2]+z)),A=m[a],B=m[b],l=it=>{const q=it.body.pointToLocalFrame(w);return new V3(q.x,q.y,q.z)};mkJoint(A,B,l(A),l(B))})}
+W.addEventListener('preStep',()=>{npcs.forEach(n=>{if(!n.active)return;n.t+=DT;
+ if(n.kind=='walk'){const c=cam.getWorldPosition(new V3),dx=c.x-n.ax,dz=c.z-n.az,d=Math.hypot(dx,dz);if(d>1.1){n.ax+=dx/d*.5*DT;n.az+=dz/d*.5*DT}}
  n.its.forEach(it=>{const b=it.body,p=it.off,m=b.mass;let tz=0,ty=0;
-  if(n.kind=='walk'){const s=Math.sin(n.t*4+(it.n.endsWith('R')?Math.PI:0));if(it.n[0]=='t')tz=s*.15;if(it.n[0]=='s'){tz=s*.2;ty=Math.max(0,-s)*.1}if(it.n[1]=='a')tz=-s*.1}
+  if(n.kind=='walk'){const s=Math.sin(n.t*4+(it.n.endsWith('R')?Math.PI:0));if(/^th/.test(it.n))tz=s*.15;if(/^(sh|ft)/.test(it.n)){tz=s*.2;ty=Math.max(0,-s)*.1}if(/^(ua|fa)/.test(it.n))tz=-s*.1}
   b.force.x+=m*(60*(n.ax+p[0]-b.position.x)-9*b.velocity.x);b.force.y+=m*(60*(p[1]+ty-b.position.y)-9*b.velocity.y-W.gravity.y);b.force.z+=m*(60*(n.az+p[2]+tz-b.position.z)-9*b.velocity.z);
-  b.quaternion.slerp(IDQ,.2,b.quaternion);b.angularVelocity.scale(.7,b.angularVelocity)})})});
-// ---- props & weapons
-function prop(k){let sh,geo,mass=3,col=0x8a6a4a;
+  b.quaternion.slerp(it.rq,.2,b.quaternion);b.angularVelocity.scale(.7,b.angularVelocity)})})});
+// ---- props & weapons (g = grip point: the hand holds the handle, not the origin)
+function prop(k){let sh,geo,mass=3;
  if(k=='box'){sh=new CANNON.Box(new CANNON.Vec3(.15,.15,.15));geo=new THREE.BoxGeometry(.3,.3,.3)}
- else if(k=='ball'){sh=new CANNON.Sphere(.18);geo=new THREE.SphereGeometry(.18,16,12);col=0xd04a3a;mass=1.5}
- else if(k=='barrel'){sh=new CANNON.Box(new CANNON.Vec3(.2,.3,.2));geo=new THREE.CylinderGeometry(.2,.2,.6,16);col=0x3a6a8a;mass=8}
- else{sh=new CANNON.Box(new CANNON.Vec3(.4,.05,.4));geo=new THREE.BoxGeometry(.8,.1,.8);col=0x888888;mass=15}
- const b=new CANNON.Body({mass,linearDamping:.1,angularDamping:.2});b.addShape(sh);b.position.set(rnd(1.4),1.4,-1+rnd(.4));b.quaternion.setFromEuler(rnd(1),rnd(3),rnd(1));
- addItem(b,new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:col,roughness:.8})),{})}
+ else if(k=='ball'){sh=new CANNON.Sphere(.18);geo=new THREE.SphereGeometry(.18,16,12);mass=1.5}
+ else if(k=='barrel'){sh=new CANNON.Box(new CANNON.Vec3(.2,.3,.2));geo=new THREE.CylinderGeometry(.2,.2,.6,16);mass=8}
+ else{sh=new CANNON.Box(new CANNON.Vec3(.4,.05,.4));geo=new THREE.BoxGeometry(.8,.1,.8);mass=15}
+ const b=new CANNON.Body({mass,linearDamping:.1,angularDamping:.2});b.addShape(sh);b.position.set(sx(),1.4,sz());b.quaternion.setFromEuler(rnd(1),rnd(3),rnd(1));
+ addItem(b,new THREE.Mesh(geo,PM[k]),{})}
 const WD={
- pistol:{m:.8,gun:{len:.18,imp:5,cd:.18,n:1,sp:.003},p:[[.03,.045,.2,0,.01,-.08,0x222222],[.034,.11,.05,0,-.07,0,0x151515]]},
- shotgun:{m:3,gun:{len:.75,imp:3,cd:.8,n:8,sp:.05},p:[[.04,.04,.75,0,.02,-.37,0x1a1a1a],[.035,.035,.55,0,-.02,-.28,0x222222],[.055,.05,.22,0,-.02,-.25,0x111111],[.05,.09,.25,0,0,.02,0x222222],[.045,.09,.25,0,-.01,.25,0x1b1b1b],[.04,.1,.05,0,-.08,.08,0x111111]]},
- rifle:{m:3,gun:{len:.55,imp:4,cd:.09,n:1,sp:.01,auto:1},p:[[.03,.03,.5,0,.02,-.3,0x222222],[.05,.09,.32,0,0,0,0x2a2a2a],[.03,.14,.05,0,-.1,-.02,0x111111],[.035,.1,.04,0,-.08,.1,0x111111],[.04,.08,.25,0,0,.24,0x222222]]},
+ pistol:{m:.8,g:[0,-.07,0],gun:{len:.18,imp:5,cd:.18,n:1,sp:.003},p:[[.03,.045,.2,0,.01,-.08,0x222222],[.034,.11,.05,0,-.07,0,0x151515]]},
+ shotgun:{m:3,g:[0,-.08,.08],gun:{len:.75,imp:3,cd:.8,n:8,sp:.05},p:[[.04,.04,.75,0,.02,-.37,0x1a1a1a],[.035,.035,.55,0,-.02,-.28,0x222222],[.055,.05,.22,0,-.02,-.25,0x111111],[.05,.09,.25,0,0,.02,0x222222],[.045,.09,.25,0,-.01,.25,0x1b1b1b],[.04,.1,.05,0,-.08,.08,0x111111]]},
+ rifle:{m:3,g:[0,-.08,.1],gun:{len:.55,imp:4,cd:.09,n:1,sp:.01,auto:1},p:[[.03,.03,.5,0,.02,-.3,0x222222],[.05,.09,.32,0,0,0,0x2a2a2a],[.03,.14,.05,0,-.1,-.02,0x111111],[.035,.1,.04,0,-.08,.1,0x111111],[.04,.08,.25,0,0,.24,0x222222]]},
  grenade:{m:.5,gren:1,p:[[.07,.1,.07,0,0,0,0x5b5e3a,1],[.064,.016,.064,0,.045,0,0xe0b000],[.015,.1,.03,.04,.02,0,0x777b80]]},
- knife:{m:.3,blade:{len:.2},p:[[.008,.04,.2,0,0,-.1,0x8a8f95],[.025,.03,.11,0,0,.055,0x6b3a1e]]},
- machete:{m:.6,blade:{len:.45},p:[[.01,.07,.45,0,0,-.225,0x777b80],[.026,.032,.12,0,0,.06,0x5a3015]]},
- katana:{m:1,blade:{len:.8},p:[[.008,.035,.8,0,0,-.4,0x16161a],[.07,.07,.01,0,0,0,0xd4af37],[.03,.03,.25,0,0,.13,0x5a1020]]}};
-function weapon(k){const d=WD[k],b=new CANNON.Body({mass:d.m,linearDamping:.05,angularDamping:.1}),o=new THREE.Group();
- d.p.forEach(([w,h,dp,x,y,z,c,s])=>{b.addShape(new CANNON.Box(new CANNON.Vec3(w/2,h/2,dp/2)),new CANNON.Vec3(x,y,z));
-  const m=new THREE.Mesh(s?new THREE.SphereGeometry(.5,12,10):new THREE.BoxGeometry(w,h,dp),new THREE.MeshStandardMaterial({color:c,roughness:.4,metalness:.5}));if(s)m.scale.set(w,h,dp);m.position.set(x,y,z);o.add(m)});
- b.position.set(rnd(1.4),1.2,-1+rnd(.4));b.quaternion.setFromEuler(rnd(1),rnd(3),0);addItem(b,o,{gun:d.gun,blade:d.blade,gren:d.gren})}
+ knife:{m:.3,g:[0,0,.055],blade:{len:.2},p:[[.008,.04,.2,0,0,-.1,0x8a8f95],[.025,.03,.11,0,0,.055,0x6b3a1e]]},
+ machete:{m:.6,g:[0,0,.06],blade:{len:.45},p:[[.01,.07,.45,0,0,-.225,0x777b80],[.026,.032,.12,0,0,.06,0x5a3015]]},
+ katana:{m:1,g:[0,0,.13],blade:{len:.8},p:[[.008,.035,.8,0,0,-.4,0x16161a],[.07,.07,.01,0,0,0,0xd4af37],[.03,.03,.25,0,0,.13,0x5a1020]]}};
+function weapon(k){const d=WD[k],[gx,gy,gz]=d.g||[0,0,0],b=new CANNON.Body({mass:d.m,linearDamping:.05,angularDamping:.1}),o=new THREE.Group();
+ d.p.forEach(([w,h,dp,x,y,z,c,s])=>{b.addShape(new CANNON.Box(new CANNON.Vec3(w/2,h/2,dp/2)),new CANNON.Vec3(x-gx,y-gy,z-gz));
+  const m=new THREE.Mesh(s?new THREE.SphereGeometry(.5,12,10):new THREE.BoxGeometry(w,h,dp),new THREE.MeshStandardMaterial({color:c,roughness:.4,metalness:.5}));if(s)m.scale.set(w,h,dp);m.position.set(x-gx,y-gy,z-gz);o.add(m)});
+ b.position.set(sx(),1.2,sz());b.quaternion.setFromEuler(rnd(1),rnd(3),0);
+ addItem(b,o,{gun:d.gun,blade:d.blade,gren:d.gren,gz,mz:new V3(-gx,.015-gy,-(d.gun?d.gun.len:0)-gz)})}
 // ---- blood / fx
 const BP=[],bMat=new THREE.MeshBasicMaterial({color:COLS[0]}),cMat=new THREE.MeshBasicMaterial({color:0x777777});let bi=0;
 for(let i=0;i<350;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(.02,.02,.02),bMat);m.visible=false;scene.add(m);BP.push({m,v:new V3,rest:true})}
 function bloodAt(p,dir,n,sp){if(!S.blood)return;for(let i=0;i<n;i++){const q=BP[bi++%350];q.m.visible=true;q.m.position.copy(p);q.m.scale.setScalar(S.cens?2.5:1);q.m.material=S.cens?cMat:bMat;q.rest=false;q.v.set(rnd(2),rnd(2)+.5,rnd(2)).addScaledVector(dir,sp)}}
 function flash(p,c,r,life){const m=new THREE.Mesh(new THREE.SphereGeometry(r,10,8),new THREE.MeshBasicMaterial({color:c,transparent:true}));m.position.copy(p);scene.add(m);fxs.push({m,t:life,l:life})}
 function refresh(){bMat.color.set(COLS[S.col]);items.forEach(it=>it.inner&&it.inner.material.color.set(innerCol()))}
-// ---- damage
+// ---- damage: rip / slice / shoot / explode
 function breakJ(j){W.removeConstraint(j.c);const i=joints.indexOf(j);if(i>=0)joints.splice(i,1);const p=j.a.body.pointToWorldFrame(cv(j.pa));bloodAt(new V3(p.x,p.y,p.z),UP,22,1.5);if(j.a.npc)j.a.npc.active=false}
-function ripCheck(){if(!S.dis)return;joints.slice().forEach(j=>{if(j.a.body.pointToWorldFrame(cv(j.pa)).distanceTo(j.b.body.pointToWorldFrame(cv(j.pb)))>.12)breakJ(j)})}
+function ripCheck(){if(!S.dis)return;joints.slice().forEach(j=>{const lim=(j.a.held||j.b.held)?.11:.17;if(j.a.body.pointToWorldFrame(cv(j.pa)).distanceTo(j.b.body.pointToWorldFrame(cv(j.pb)))>lim)breakJ(j)})}
 function slice(it,n,p){it.cd=.4;const qi=it.g.quaternion.clone().invert(),nl=n.clone().applyQuaternion(qi),pl=p.clone().sub(it.g.position).applyQuaternion(qi),b=it.body;
- const nb=new CANNON.Body({mass:b.mass/2,linearDamping:.15,angularDamping:.35});b.shapes.forEach((s,i)=>nb.addShape(s,b.shapeOffsets[i].clone()));b.mass/=2;b.updateMassProperties();
- nb.position.copy(b.position);nb.quaternion.copy(b.quaternion);nb.velocity.copy(b.velocity);nb.angularVelocity.copy(b.angularVelocity);nb.collisionFilterGroup=2;nb.collisionFilterMask=1;
- const B=mkPiece(nb,it.skin.geometry,it.h,it.npc,it.cuts.map(c=>({n:c.n.clone(),p:c.p.clone()})),0);B.cuts.push({n:nl.clone().negate(),p:pl.clone()});B.planes.push(new THREE.Plane());B.cd=.4;B.n=it.n;B.off=it.off;
+ const nb=new CANNON.Body({mass:b.mass/2,linearDamping:.15,angularDamping:.35});b.shapes.forEach((s,i)=>nb.addShape(s,b.shapeOffsets[i].clone()));b.mass/=2;b.updateMassProperties();it.m0=b.mass;
+ nb.position.copy(b.position);nb.quaternion.copy(b.quaternion);nb.velocity.copy(b.velocity);nb.angularVelocity.copy(b.angularVelocity);nb.collisionFilterGroup=2;nb.collisionFilterMask=5;
+ const B=mkPiece(nb,it.skin.geometry,it.h,it.npc,it.cuts.map(c=>({n:c.n.clone(),p:c.p.clone()})),null);B.cuts.push({n:nl.clone().negate(),p:pl.clone()});B.planes.push(new THREE.Plane());B.cd=.4;B.n=it.n;B.off=it.off;B.rq=it.rq;
  it.cuts.push({n:nl,p:pl});it.planes.push(new THREE.Plane());[it,B].forEach(x=>{x.skin.material.needsUpdate=true;x.inner.material.needsUpdate=true});
  joints.slice().forEach(j=>[['a','pa'],['b','pb']].forEach(([k,pk])=>{if(j[k]===it&&nl.dot(j[pk].clone().sub(pl))<0){W.removeConstraint(j.c);j[k]=B;j.c=new CANNON.PointToPointConstraint(j.a.body,cv(j.pa),j.b.body,cv(j.pb));W.addConstraint(j.c)}}));
  const k=.8;b.velocity.x+=n.x*k;b.velocity.y+=n.y*k;b.velocity.z+=n.z*k;nb.velocity.x-=n.x*k;nb.velocity.y-=n.y*k;nb.velocity.z-=n.z*k;
@@ -98,24 +110,23 @@ function slice(it,n,p){it.cd=.4;const qi=it.g.quaternion.clone().invert(),nl=n.c
 function bladeCheck(){if(!S.dis)return;items.slice().forEach(bl=>{if(!bl.blade)return;const v=bl.body.velocity;if(v.length()<2.2)return;
  const dir=new V3(0,0,-1).applyQuaternion(bl.g.quaternion),n=new V3().crossVectors(dir,new V3(v.x,v.y,v.z).normalize());if(n.length()<.2)return;n.normalize();
  items.slice().forEach(it=>{if(!it.skin||it.cd>0||it.cuts.length>=3)return;const qi=it.g.quaternion.clone().invert();
-  for(const f of[.3,.55,.8]){const p=bl.g.position.clone().addScaledVector(dir,bl.blade.len*f),l=p.clone().sub(it.g.position).applyQuaternion(qi);
+  for(const f of[.3,.55,.8]){const p=bl.g.position.clone().addScaledVector(dir,bl.blade.len*f+bl.gz),l=p.clone().sub(it.g.position).applyQuaternion(qi);
    if(Math.abs(l.x)<it.h[0]+.02&&Math.abs(l.y)<it.h[1]+.02&&Math.abs(l.z)<it.h[2]+.02){slice(it,n,p);break}}})})}
-function fire(it){const g=it.gun,from=new V3(0,.015,-g.len).applyQuaternion(it.g.quaternion).add(it.g.position);
+function fire(it){const g=it.gun,from=it.mz.clone().applyQuaternion(it.g.quaternion).add(it.g.position);
  for(let i=0;i<g.n;i++){const dir=new V3(rnd(g.sp*2),rnd(g.sp*2),-1).normalize().applyQuaternion(it.g.quaternion),r=new CANNON.RaycastResult();
-  W.raycastClosest(cv(from),cv(from.clone().addScaledVector(dir,30)),{},r);
-  if(r.hasHit){const hb=r.body,hp_=r.hitPointWorld;hb.applyImpulse(cv(dir.clone().multiplyScalar(g.imp)),new CANNON.Vec3(hp_.x-hb.position.x,hp_.y-hb.position.y,hp_.z-hb.position.z));
-   const h=hb.it;if(h&&h.npc){h.dmg++;h.npc.active=false;bloodAt(new V3(hp_.x,hp_.y,hp_.z),dir,6,2);if(S.dis&&h.dmg>=4)joints.filter(j=>j.a===h||j.b===h).forEach(breakJ)}}}
+  W.raycastClosest(cv(from),cv(from.clone().addScaledVector(dir,30)),{collisionFilterMask:3},r);
+  if(r.hasHit){const hb=r.body,h_=r.hitPointWorld;hb.applyImpulse(cv(dir.clone().multiplyScalar(g.imp)),new CANNON.Vec3(h_.x-hb.position.x,h_.y-hb.position.y,h_.z-hb.position.z));
+   const h=hb.it;if(h&&h.npc){h.dmg++;h.npc.active=false;bloodAt(new V3(h_.x,h_.y,h_.z),dir,6,2);if(S.dis&&h.dmg>=4)joints.filter(j=>j.a===h||j.b===h).forEach(breakJ)}}}
  flash(from,0xffdd88,.06,.05);it.cdT=g.cd}
-function boom(it){const p=new V3(it.body.position.x,it.body.position.y,it.body.position.z);flash(p,0xffaa33,.7,.3);
- items.slice().forEach(o=>{if(o===it)return;const d=p.distanceTo(new V3(o.body.position.x,o.body.position.y,o.body.position.z));if(d<4){const dir=new V3(o.body.position.x-p.x,o.body.position.y-p.y+.3,o.body.position.z-p.z).normalize().multiplyScalar(o.body.mass*14/(d+.5));o.body.applyImpulse(cv(dir),new CANNON.Vec3());
+function boom(it){const p=new V3(it.body.position.x,it.body.position.y,it.body.position.z);flash(p,0xffaa33,.7,.3);hands.forEach(H=>{if(H.held===it)release(H)});
+ items.slice().forEach(o=>{if(o===it||o.held)return;const d=p.distanceTo(new V3(o.body.position.x,o.body.position.y,o.body.position.z));if(d<4){const dir=new V3(o.body.position.x-p.x,o.body.position.y-p.y+.3,o.body.position.z-p.z).normalize().multiplyScalar(o.body.mass*14/(d+.5));o.body.applyImpulse(cv(dir),new CANNON.Vec3());
   if(o.npc&&d<2.2){o.dmg+=10;o.npc.active=false;bloodAt(new V3(o.body.position.x,o.body.position.y,o.body.position.z),UP,12,2)}}});
- if(S.dis)joints.slice().forEach(j=>{const w=j.a.body.pointToWorldFrame(cv(j.pa));if(p.distanceTo(new V3(w.x,w.y,w.z))<1.6)breakJ(j)});
- hands.forEach(H=>{if(H.held===it)release(H)});rm(it)}
+ if(S.dis)joints.slice().forEach(j=>{const w=j.a.body.pointToWorldFrame(cv(j.pa));if(p.distanceTo(new V3(w.x,w.y,w.z))<1.6)breakJ(j)});rm(it)}
 function rm(it){W.removeBody(it.body);scene.remove(it.g);items.splice(items.indexOf(it),1)}
 function clearAll(){hands.forEach(release);joints.forEach(j=>W.removeConstraint(j.c));joints.length=0;items.slice().forEach(rm);npcs.length=0;BP.forEach(q=>{q.m.visible=false;q.rest=true})}
 // ---- wall panel
 const pc=document.createElement('canvas');pc.width=512;pc.height=400;const px=pc.getContext('2d'),ptex=new THREE.CanvasTexture(pc);
-const panel=new THREE.Mesh(new THREE.PlaneGeometry(1.6,1.25),new THREE.MeshBasicMaterial({map:ptex}));panel.position.set(0,1.35,-2.09);scene.add(panel);
+const panel=new THREE.Mesh(new THREE.PlaneGeometry(1.6,1.25),new THREE.MeshBasicMaterial({map:ptex}));panel.position.set(0,1.35,-2.19);scene.add(panel);
 let tab=0,hov=-1;const oo=v=>v?'ВКЛ':'ВЫКЛ';
 const PG=[['Мир',[[()=>'Расчленение: '+oo(S.dis),()=>{S.dis=S.dis?0:1}],[()=>'Кровь: '+oo(S.blood),()=>{S.blood=S.blood?0:1;refresh()}],[()=>'Цензура: '+oo(S.cens),()=>{S.cens=S.cens?0:1;refresh()}],[()=>'Кровь: '+COLN[S.col],()=>{S.col=(S.col+1)%5;refresh()}],[()=>'Гравитация: '+['земля','луна','ноль'][S.grav],()=>{S.grav=(S.grav+1)%3;W.gravity.y=GR[S.grav]}],['Очистить всё',clearAll]]],
 ['Объекты',[['Ящик',()=>prop('box')],['Шар',()=>prop('ball')],['Бочка',()=>prop('barrel')],['Плита',()=>prop('slab')]]],
@@ -128,29 +139,33 @@ function hit(u,v){if(v<56)return{t:Math.min(2,Math.floor(u/171))};for(let i=0;i<
 function press(u,v){const h=hit(u,v);if(h.t!=null){tab=h.t;hov=-1}else if(h.b!=null)PG[tab][1][h.b][1]();draw()}
 draw();const rc=new THREE.Raycaster(),mp=new THREE.Vector2();
 renderer.domElement.addEventListener('pointerdown',e=>{mp.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);rc.setFromCamera(mp,cam);const i=rc.intersectObject(panel)[0];if(i)press(i.uv.x*512,(1-i.uv.y)*400)});
-// ---- player: hands, arms, body
-const pm=new THREE.MeshStandardMaterial({color:0x6a6cff,roughness:.6});
-function mkHand(sd){const g=new THREE.Group(),bx=(w,h,d,x,y,z,p)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),pm);m.position.set(x,y,z);p.add(m)};bx(.085,.025,.09,0,0,.01,g);
- const fin=(x,z,len)=>{const j1=new THREE.Group();j1.position.set(x,0,z);g.add(j1);bx(.017,.017,len,0,0,-len/2,j1);const j2=new THREE.Group();j2.position.z=-len;j1.add(j2);bx(.015,.015,len*.8,0,0,-len*.4,j2);const t=new THREE.Object3D();t.position.z=-len*.8;j2.add(t);return{j1,j2,t}};
- const F=[.03,.01,-.01,-.03].map(x=>fin(-sd*x,-.035,.05)),th=fin(-sd*.055,-.01,.045),c=(f,v)=>{f.j1.rotation.x=-v*1.4;f.j2.rotation.x=-v*1.6};
- return{g,tip:F[0].t,curl:(t,s,b)=>{c(F[0],t);c(F[1],s);c(F[2],s);c(F[3],s);th.j1.rotation.y=sd*(.4-b*.9);th.j2.rotation.y=sd*(.2-b*.5)}}}
+// ---- player: hands (side-on, thumb up), 3-phalanx fingers, IK arms, body
+function mkHand(sd){const root=new THREE.Group(),g=new THREE.Group();root.add(g);g.rotation.z=-sd*Math.PI/2;bxm(.09,.03,.1,0,0,0,g);
+ const fin=(x,z,len,n)=>{const top=new THREE.Group();top.position.set(x,0,z);g.add(top);const js=[];let p=top,l=len,prev=0;
+  for(let i=0;i<n;i++){const j=new THREE.Group();j.position.z=-prev;p.add(j);bxm(.017,.017,l,0,0,-l/2,j);js.push(j);p=j;prev=l;l*=.78}const t=new THREE.Object3D();t.position.z=-prev;p.add(t);return{js,t}};
+ const F=[0,1,2,3].map(i=>fin(-sd*(.03-i*.02),-.05,.04,3)),th=fin(-sd*.055,-.01,.04,2),c=(f,v)=>f.js.forEach(j=>j.rotation.x=-v*1.3);
+ return{g:root,tip:F[0].t,curl:(t,s,b)=>{c(F[0],t);c(F[1],s);c(F[2],s);c(F[3],s);th.js[0].rotation.y=sd*(.45-b*.8);th.js[0].rotation.x=-b*.5;th.js[1].rotation.x=-b*.9}}}
 const limbM=r=>{const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,1,10),pm);scene.add(m);return m};
 const hands=[0,1].map(i=>{const grip=renderer.xr.getControllerGrip(i),ctrl=renderer.xr.getController(i);rig.add(grip,ctrl);
- const hb=new CANNON.Body({mass:0,type:CANNON.Body.KINEMATIC,collisionFilterMask:0});hb.addShape(new CANNON.Sphere(.04));W.addBody(hb);
- const H={grip,hb,p:new V3,q:new THREE.Quaternion,hv:new V3,arm:[limbM(.04),limbM(.035)],pz:1,init:0,sd:1,held:null,gc:null,sqOn:0,trOn:0,jp:0,tz:0};H.arm.forEach(m=>m.visible=false);
+ const hb=new CANNON.Body({mass:0,type:CANNON.Body.KINEMATIC});hb.addShape(new CANNON.Sphere(.06));hb.collisionFilterGroup=4;hb.collisionFilterMask=3;W.addBody(hb);
+ const H={grip,hb,p:new V3,q:new THREE.Quaternion,hv:new V3,arm:[limbM(.05),limbM(.04)],pz:1,init:0,sd:1,held:null,relP:null,relQ:null,sqOn:0,trOn:0,tz:0,pc:0};H.arm.forEach(m=>m.visible=false);
+ hb.addEventListener('collide',e=>{const it=e.body.it,sp=H.hv.length();if(!it||!it.npc||sp<2||H.pc>0||H.held)return;H.pc=.15;it.npc.active=false;it.dmg+=sp>5?2:1;
+  bloodAt(H.p.clone(),H.hv.clone().normalize(),sp>5?10:4,1.5);if(S.dis&&it.dmg>=6)joints.filter(j=>j.a===it||j.b===it).forEach(breakJ)});
  ctrl.addEventListener('connected',e=>{H.gp=e.data.gamepad;H.sd=e.data.handedness=='left'?-1:1;if(H.model)grip.remove(H.model.g);H.model=mkHand(H.sd);grip.add(H.model.g)});return H});
 const bodyG=new THREE.Group();scene.add(bodyG);const mkb=(w,h,d)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),pm);bodyG.add(m);return m};
 const torso=mkb(.36,.5,.2),pelv=mkb(.32,.2,.2),legs=[-1,1].map(s=>{const m=new THREE.Mesh(new THREE.CylinderGeometry(.07,.06,1,10),pm);m.position.x=s*.1;bodyG.add(m);return m});
 function limb(m,a,b){const d=b.clone().sub(a);m.position.copy(a).add(b).multiplyScalar(.5);m.scale.y=Math.max(d.length(),.01);m.quaternion.setFromUnitVectors(UP,d.normalize())}
+// held objects follow the hand pose directly (kinematic) => no lag/jitter
 function grab(H){let best=null,bd=.14;items.forEach(it=>{if(it.held)return;const b=it.body,d=Math.hypot(b.position.x-H.p.x,b.position.y-H.p.y,b.position.z-H.p.z)-b.boundingRadius*.7;if(d<bd){bd=d;best=it}});if(!best)return;
- const b=best.body;if(best.gun||best.blade||best.gren){b.position.set(H.p.x,H.p.y,H.p.z);b.quaternion.set(H.q.x,H.q.y,H.q.z,H.q.w);b.velocity.set(0,0,0);b.angularVelocity.set(0,0,0);H.gc=new CANNON.LockConstraint(H.hb,b)}
- else H.gc=new CANNON.PointToPointConstraint(H.hb,new CANNON.Vec3(0,0,0),b,b.pointToLocalFrame(cv(H.p)));
- W.addConstraint(H.gc);H.held=best;best.held=H;if(best.npc)best.npc.active=false}
-function release(H){if(!H.held)return;W.removeConstraint(H.gc);H.held.held=null;H.held.body.velocity.set(H.hv.x,H.hv.y,H.hv.z);H.held=null;H.gc=null}
+ const b=best.body,hqi=H.q.clone().invert();
+ if(best.gun||best.blade||best.gren){H.relP=new V3;H.relQ=new THREE.Quaternion}
+ else{H.relP=new V3(b.position.x-H.p.x,b.position.y-H.p.y,b.position.z-H.p.z).applyQuaternion(hqi);H.relQ=hqi.clone().multiply(new THREE.Quaternion(b.quaternion.x,b.quaternion.y,b.quaternion.z,b.quaternion.w))}
+ b.type=CANNON.Body.KINEMATIC;b.mass=0;b.updateMassProperties();b.velocity.set(0,0,0);b.angularVelocity.set(0,0,0);H.held=best;best.held=H;if(best.npc)best.npc.active=false}
+function release(H){const it=H.held;if(!it)return;const b=it.body;b.type=CANNON.Body.DYNAMIC;b.mass=it.m0;b.updateMassProperties();b.velocity.set(H.hv.x,H.hv.y,H.hv.z);b.wakeUp();it.held=null;H.held=null}
 const tmp=new V3,tq=new THREE.Quaternion;
-function input(dt){hands.forEach(H=>{if(!H.model)return;H.grip.getWorldPosition(tmp);H.grip.getWorldQuaternion(tq);
- if(!H.init){H.p.copy(tmp);H.init=1}H.hv.copy(tmp).sub(H.p).divideScalar(dt);if(H.hv.length()>15)H.hv.setLength(15);H.p.copy(tmp);H.q.copy(tq);
- H.hb.position.set(tmp.x,tmp.y,tmp.z);H.hb.quaternion.set(tq.x,tq.y,tq.z,tq.w);H.hb.velocity.set(H.hv.x,H.hv.y,H.hv.z);
+function input(dt){hands.forEach(H=>{H.pc-=dt;if(!H.model)return;H.grip.getWorldPosition(tmp);H.grip.getWorldQuaternion(tq);
+ if(!H.init){H.p.copy(tmp);H.init=1}H.hv.lerp(tmp.clone().sub(H.p).divideScalar(dt),.5);if(H.hv.length()>15)H.hv.setLength(15);H.p.copy(tmp);H.q.copy(tq);
+ H.hb.position.set(tmp.x,tmp.y,tmp.z);H.hb.quaternion.set(tq.x,tq.y,tq.z,tq.w);H.hb.velocity.set(H.hv.x,H.hv.y,H.hv.z);H.hb.collisionFilterMask=H.held?0:3;
  const b=H.gp.buttons,ax=H.gp.axes,tr=b[0]?b[0].value:0,sq=b[1]?b[1].value:0,th=b[4]&&b[4].pressed?1:0;H.model.curl(tr,sq,th);
  if(sq>.6&&!H.sqOn){H.sqOn=1;grab(H)}if(sq<.3&&H.sqOn){H.sqOn=0;release(H)}
  let jp=0;if(tr>.6&&!H.trOn){H.trOn=1;jp=1}if(tr<.3)H.trOn=0;const it=H.held;
@@ -158,11 +173,12 @@ function input(dt){hands.forEach(H=>{if(!H.model)return;H.grip.getWorldPosition(
  const cd=new V3(0,0,-1).applyQuaternion(cam.getWorldQuaternion(tq)),f=new V3(cd.x,0,cd.z).normalize(),r=new V3(-f.z,0,f.x);
  if(H.sd<0)rig.position.addScaledVector(f,-(ax[3]||0)*dt*2).addScaledVector(r,(ax[2]||0)*dt*2);
  else{const x=ax[2]||0;if(Math.abs(x)>.7&&!H.tz){H.tz=1;cam.getWorldPosition(tmp);const a=tmp.clone();rig.rotation.y-=Math.sign(x)*Math.PI/6;rig.updateMatrixWorld(true);cam.getWorldPosition(tmp);rig.position.x+=a.x-tmp.x;rig.position.z+=a.z-tmp.z}if(Math.abs(x)<.3)H.tz=0}})}
+function heldSync(){hands.forEach(H=>{const it=H.held;if(!it)return;const b=it.body;tmp.copy(H.relP).applyQuaternion(H.q).add(H.p);b.position.set(tmp.x,tmp.y,tmp.z);tq.copy(H.q).multiply(H.relQ);b.quaternion.set(tq.x,tq.y,tq.z,tq.w);b.velocity.set(H.hv.x,H.hv.y,H.hv.z);b.angularVelocity.set(0,0,0);b.aabbNeedsUpdate=true})}
 function player(){cam.getWorldPosition(tmp);const hd=tmp.clone(),d=new V3(0,0,-1).applyQuaternion(cam.getWorldQuaternion(tq)),yaw=Math.atan2(-d.x,-d.z);
  bodyG.position.set(hd.x,0,hd.z);bodyG.rotation.y=yaw;torso.position.set(0,hd.y-.5,.05);pelv.position.set(0,hd.y-.82,.05);const hy=Math.max(hd.y-.92,.1);legs.forEach(m=>{m.scale.y=hy;m.position.y=hy/2;m.position.z=.05});
  const rt=new V3(Math.cos(yaw),0,-Math.sin(yaw)),bk=new V3(Math.sin(yaw),0,Math.cos(yaw));
  hands.forEach(H=>{H.arm.forEach(m=>m.visible=!!H.model);if(!H.model)return;
-  const wr=new V3(0,0,.07).applyQuaternion(H.q).add(H.p),s=hd.clone().addScaledVector(rt,H.sd*.2).add(new V3(0,-.22,0)),d2=wr.clone().sub(s),dist=Math.max(Math.min(d2.length(),.598),.02);d2.normalize();
+  const wr=new V3(0,0,.09).applyQuaternion(H.q).add(H.p),s=hd.clone().addScaledVector(rt,H.sd*.2).add(new V3(0,-.22,0)),d2=wr.clone().sub(s),dist=Math.max(Math.min(d2.length(),.598),.02);d2.normalize();
   const hh=Math.sqrt(Math.max(.09-dist*dist/4,0)),pole=rt.clone().multiplyScalar(H.sd*.6).add(new V3(0,-1,0)).addScaledVector(bk,.5);pole.addScaledVector(d2,-pole.dot(d2)).normalize();
   const e=s.clone().addScaledVector(d2,dist/2).addScaledVector(pole,hh);limb(H.arm[0],s,e);limb(H.arm[1],e,s.clone().addScaledVector(d2,dist))})}
 function poke(){hands.forEach(H=>{if(!H.model)return;H.model.tip.getWorldPosition(tmp);const l=panel.worldToLocal(tmp.clone()),u=(l.x+.8)/1.6*512,v=(.625-l.y)/1.25*400,on=Math.abs(l.x)<.8&&Math.abs(l.y)<.625&&l.z<.12&&l.z>-.05;
@@ -170,15 +186,15 @@ function poke(){hands.forEach(H=>{if(!H.model)return;H.model.tip.getWorldPositio
 // ---- loop
 const clock=new THREE.Clock();
 renderer.setAnimationLoop(()=>{const dt=Math.min(clock.getDelta(),.05)||.016;rig.updateMatrixWorld(true);
- input(dt);W.step(1/60,dt,3);
- items.forEach(it=>{it.g.position.copy(it.body.position);it.g.quaternion.copy(it.body.quaternion);it.cd-=dt;it.cdT-=dt;
+ input(dt);W.step(DT,dt,6);heldSync();
+ items.forEach(it=>{const b=it.body;if(b.position.y<-.5){b.position.y=.6;b.velocity.set(0,0,0)}
+  it.g.position.copy(b.position);it.g.quaternion.copy(b.quaternion);it.cd-=dt;it.cdT-=dt;
   if(it.cuts)it.cuts.forEach((c,i)=>it.planes[i].setFromNormalAndCoplanarPoint(c.n.clone().applyQuaternion(it.g.quaternion),c.p.clone().applyQuaternion(it.g.quaternion).add(it.g.position)));
   if(it.armT){it.armT-=dt;it.g.visible=Math.floor(it.armT*8)%2==0||it.armT>1.5;if(it.armT<=0)boom(it)}});
  bladeCheck();ripCheck();
  BP.forEach(q=>{if(q.rest)return;q.v.y+=W.gravity.y*dt;q.m.position.addScaledVector(q.v,dt);if(q.m.position.y<.012){q.m.position.y=.008;q.rest=true;if(!S.cens)q.m.scale.set(2,.2,2)}});
  for(let i=fxs.length-1;i>=0;i--){const f=fxs[i];f.t-=dt;f.m.material.opacity=Math.max(f.t/f.l,0);f.m.scale.setScalar(1+(1-f.t/f.l)*2);if(f.t<=0){scene.remove(f.m);fxs.splice(i,1)}}
  player();poke();renderer.render(scene,cam)});
-// ---- VR button
 const btn=document.getElementById('vr');
 if(navigator.xr){navigator.xr.isSessionSupported('immersive-vr').then(ok=>{btn.textContent=ok?'Войти в VR':'VR недоступен — режим просмотра';btn.disabled=!ok}).catch(()=>{btn.textContent='VR недоступен'})}else btn.textContent='WebXR не поддерживается';
 btn.onclick=async()=>{try{const s=await navigator.xr.requestSession('immersive-vr',{optionalFeatures:['local-floor','bounded-floor']});renderer.xr.setReferenceSpaceType('local-floor');await renderer.xr.setSession(s)}catch(e){btn.textContent='Ошибка входа в VR'}};
