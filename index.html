@@ -45,8 +45,8 @@ let LP,LM,me,role='ape';const PAL=['#e04040','#3070e0','#40c060','#e0c030','#b05
 class Ape{constructor(src,col,k,own){this.own=own;this.col=col;this.g=new T.Group();this.m=T.SkeletonUtils.clone(src);this.g.add(this.m);scene.add(this.g);const tint=new T.Color(col);
 this.m.traverse(o=>{if(o.isMesh){o.frustumCulled=false;o.material=o.material.clone();if(o.material.color)o.material.color.multiply(tint)}});
 const bones=this.bones=[];this.m.traverse(o=>{if(o.isBone)bones.push(o)});this.init=bones.map(b=>[b.position.clone(),b.quaternion.clone(),b.scale.clone()]);
-const ch=(b,re)=>b.children.find(c=>re.test(c.name));this.root=bones.find(b=>/^Bone_01/.test(b.name));this.n1=ch(this.root,/^Bone\.001/);this.n2=this.n1.children[0];
-const arm=re=>{const a=ch(this.root,re);return[a,a.children[0],a.children[0].children[0]]};this.A=[arm(/\.L_/),arm(/\.R_/)];
+const ch=(b,re)=>b.children.find(c=>re.test(c.name));this.root=bones.find(b=>/^Bone_01/.test(b.name));this.n1=ch(this.root,/^Bone\.?001/);this.n2=this.n1.children[0];
+const arm=re=>{const a=ch(this.root,re);return[a,a.children[0],a.children[0].children[0]]};this.A=[arm(/L_\d/),arm(/R_\d/)];
 this.F=this.A.map(a=>a[2].children.map(f=>{const l=[];let b=f;while(b&&b.children.length){l.push(b);b=b.children[0]}return l}));this.fq=new Map();this.F.forEach(h=>h.forEach(l=>l.forEach(b=>this.fq.set(b,b.quaternion.clone()))));
 this.g.updateMatrixWorld(true);const w=b=>b.getWorldPosition(V());this.rest=new Map();
 const RS=(b,c)=>this.rest.set(b,{d:w(c).sub(w(b)).normalize(),q:b.getWorldQuaternion(new T.Quaternion())});RS(this.root,this.n1);RS(this.n1,this.n2);this.A.forEach(a=>{RS(a[0],a[1]);RS(a[1],a[2])});
